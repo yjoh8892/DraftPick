@@ -1,0 +1,145 @@
+@inject IJSRuntime JS
+
+@* 드래프트 완료 화면. 디스코드에 그대로 붙여넣을 수 있게 텍스트로 뽑아준다. *@
+
+<div class="result">
+    <div class="card result-head">
+        <div>
+            <h2>드래프트 완료</h2>
+            <p class="muted">
+                @(Room.Teams.Count)개 팀 · @(Room.Rounds)라운드 ·
+                @(Room.OrderMode == DraftOrderMode.Snake ? "스네이크" : "순차") 방식으로 총 @(Room.TotalPicks)번의 지명이 끝났습니다.
+            </p>
+        </div>
+        <div class="row-actions">
+            <button class="btn btn-primary" @onclick="CopyResult">@(_copied ? "복사됨 ✓" : "결과 텍스트 복사")</button>
+            @if (IsHost)
+            {
+                <button class="btn" @onclick="Room.ResetToSetup">설정으로 돌아가기</button>
+                <button class="btn btn-ghost" @onclick="Undo">마지막 픽 되돌리기</button>
+            }
+        </div>
+    </div>
+
+    <div class="result-rosters">
+        @foreach (var team in Room.Teams)
+        {
+            <section class="card roster-card" style="--team-color:@team.Color" @key="team.Id">
+                <div class="roster-head">
+                    <span class="team-dot"></span>
+                    <span class="team-name">@team.Name</span>
+                    @if (!string.IsNullOrWhiteSpace(team.Captain))
+                    {
+                        <span class="team-captain">@team.Captain</span>
+                    }
+                </div>
+                <ol class="roster-list">
+                    @foreach (var player in Room.RosterOf(team.Id))
+                    {
+                        <li class="roster-slot">
+                            <span class="slot-pick">#@player.PickNumber</span>
+                            <span class="slot-name">@player.Name</span>
+                            @if (player.Position != Positions.Unset)
+                            {
+                                <span class="tag">@player.Position</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(player.Tier))
+                            {
+                                <span class="tag tier">@player.Tier</span>
+                            }
+                        </li>
+                    }
+                </ol>
+            </section>
+        }
+    </div>
+
+    <section class="card">
+        <h3>지명 순서 전체 기록</h3>
+        <ol class="pick-log">
+            @foreach (var player in DraftedInOrder)
+            {
+                var team = Room.Teams.FirstOrDefault(t => t.Id == player.DraftedBy);
+                <li style="--team-color:@(team?.Color ?? "#7c8b9a")">
+                    <span class="slot-pick">#@player.PickNumber</span>
+                    <span class="team-dot"></span>
+                    <span class="log-team">@(team?.Name ?? "?")</span>
+                    <span class="log-arrow">→</span>
+                    <span class="slot-name">@player.Name</span>
+                    @if (player.Position != Positions.Unset)
+                    {
+                        <span class="tag">@player.Position</span>
+                    }
+                </li>
+            }
+        </ol>
+    </section>
+
+    @if (Undrafted.Count > 0)
+    {
+        <section class="card">
+            <h3>미지명 선수 <span class="count">@Undrafted.Count</span></h3>
+            <div class="chip-wrap">
+                @foreach (var player in Undrafted)
+                {
+                    <span class="chip">@player.Name</span>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required DraftRoom Room { get; set; }
+    [Parameter] public bool IsHost { get; set; }
+
+    private bool _copied;
+
+    private IEnumerable<Player> DraftedInOrder =>
+        Room.Players.Where(p => p.IsDrafted).OrderBy(p => p.PickNumber);
+
+    private List<Player> Undrafted => Room.Players.Where(p => !p.IsDrafted).ToList();
+
+    private void Undo()
+    {
+        Room.UndoLastPick();
+    }
+
+    private async Task CopyResult()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", BuildText());
+            _copied = true;
+        }
+        catch (JSException)
+        {
+            _copied = false;
+        }
+    }
+
+    private string BuildText()
+    {
+        var mode = Room.OrderMode == DraftOrderMode.Snake ? "스네이크" : "순차";
+        var lines = new List<string>
+        {
+            $"[{Room.Title}] {mode} · {Room.Rounds}라운드",
+            "",
+        };
+
+        foreach (var team in Room.Teams)
+        {
+            var header = string.IsNullOrWhiteSpace(team.Captain) ? team.Name : $"{team.Name} ({team.Captain})";
+            lines.Add($"■ {header}");
+
+            foreach (var player in Room.RosterOf(team.Id))
+            {
+                var position = player.Position == Positions.Unset ? "" : $" [{player.Position}]";
+                lines.Add($"  {player.PickNumber}. {player.Name}{position}");
+            }
+            lines.Add("");
+        }
+
+        return string.Join("\n", lines).TrimEnd();
+    }
+}

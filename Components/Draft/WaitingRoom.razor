@@ -1,0 +1,83 @@
+@* 진행자가 설정하는 동안 팀장·관전자가 보는 대기 화면. *@
+
+<div class="waiting">
+    <div class="card waiting-head">
+        <div class="pulse-dot"></div>
+        <div>
+            <h2>진행자가 준비 중입니다</h2>
+            <p class="muted">시작하면 이 화면이 자동으로 드래프트 보드로 바뀝니다. 새로고침하지 않아도 됩니다.</p>
+        </div>
+    </div>
+
+    <div class="waiting-grid">
+        <section class="card">
+            <h3>규칙</h3>
+            <dl class="rule-list">
+                <dt>지명 순서</dt>
+                <dd>@(Room.OrderMode == DraftOrderMode.Snake ? "스네이크 (1→2→3 / 3→2→1)" : "순차 (매 라운드 동일)")</dd>
+
+                <dt>라운드</dt>
+                <dd>@Room.Rounds 라운드 · 팀당 @(Room.Rounds)명</dd>
+
+                <dt>턴 제한시간</dt>
+                <dd>@(Room.TurnSeconds > 0 ? $"{Room.TurnSeconds}초" : "무제한")</dd>
+
+                <dt>시간 초과</dt>
+                <dd>@(Room.TurnSeconds == 0 ? "해당 없음" : Room.AutoPickOnTimeout ? "자동 지명" : "진행자 대기")</dd>
+            </dl>
+        </section>
+
+        <section class="card">
+            <h3>참가 팀 <span class="count">@Room.Teams.Count</span></h3>
+            @if (Room.Teams.Count == 0)
+            {
+                <p class="muted">아직 팀이 없습니다.</p>
+            }
+            else
+            {
+                <ol class="team-list">
+                    @foreach (var team in Room.Teams)
+                    {
+                        <li class="team-list-item @(team.Id == MyTeamId ? "mine" : "")" style="--team-color:@team.Color">
+                            <span class="team-dot"></span>
+                            <span class="team-name">@team.Name</span>
+                            <span class="team-captain">@team.Captain</span>
+                            @if (team.Id == MyTeamId)
+                            {
+                                <span class="badge badge-live">내 팀</span>
+                            }
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+
+        <section class="card">
+            <h3>선수 풀 <span class="count">@Room.Players.Count</span></h3>
+            @if (Room.Players.Count == 0)
+            {
+                <p class="muted">아직 등록된 선수가 없습니다.</p>
+            }
+            else
+            {
+                <div class="chip-wrap">
+                    @foreach (var player in Room.Players)
+                    {
+                        <span class="chip">
+                            @player.Name
+                            @if (player.Position != Positions.Unset)
+                            {
+                                <small>@player.Position</small>
+                            }
+                        </span>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required DraftRoom Room { get; set; }
+    [Parameter] public Guid? MyTeamId { get; set; }
+}

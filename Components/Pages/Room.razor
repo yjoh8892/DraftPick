@@ -1,0 +1,178 @@
+@page "/room/{Code}"
+@implements IDisposable
+@inject DraftRoomStore Store
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>@(_room is null ? "방 없음" : $"{_room.Title} ({_room.Code}) — DraftPick")</PageTitle>
+
+@if (_room is null)
+{
+    <div class="card center-card">
+        <h2>방을 찾을 수 없습니다</h2>
+        <p class="muted">
+            <b>@Code</b> 코드의 방이 없습니다. 코드를 잘못 입력했거나, 서버가 재시작되어 방이 사라졌을 수 있습니다.
+        </p>
+        <a class="btn btn-primary" href="/">처음으로</a>
+    </div>
+}
+else
+{
+<div class="room">
+    <div class="room-bar">
+        <div class="room-id">
+            <span class="room-code" title="방 코드">@_room.Code</span>
+            <span class="room-title">@_room.Title</span>
+            <span class="badge badge-@StatusClass">@StatusLabel</span>
+        </div>
+
+        <div class="room-actions">
+            <span class="role-badge">@RoleLabel</span>
+            @if (!_isHost)
+            {
+                <button class="btn btn-ghost btn-sm" @onclick="ClearRole">역할 변경</button>
+            }
+            <button class="btn btn-ghost btn-sm" @onclick="CopyJoinLink">
+                @(_copied ? "복사됨 ✓" : "참가 링크 복사")
+            </button>
+        </div>
+    </div>
+
+    @if (!_isHost && _myTeamId is null && !_spectator)
+    {
+        <div class="card role-picker">
+            <h2>어느 자리로 들어오시나요?</h2>
+
+            @if (_room.Teams.Count == 0)
+            {
+                <p class="muted">진행자가 아직 팀을 만들지 않았습니다. 팀이 등록되면 여기에 나타납니다.</p>
+            }
+            else
+            {
+                <p class="muted">본인 팀을 고르면 자기 차례에 직접 지명할 수 있습니다.</p>
+                <div class="team-choice-grid">
+                    @foreach (var team in _room.Teams)
+                    {
+                        <button class="team-choice" style="--team-color:@team.Color" @onclick="() => ChooseTeam(team.Id)">
+                            <span class="team-choice-name">@team.Name</span>
+                            @if (!string.IsNullOrWhiteSpace(team.Captain))
+                            {
+                                <span class="team-choice-captain">@team.Captain</span>
+                            }
+                        </button>
+                    }
+                </div>
+            }
+
+            <button class="btn btn-ghost" @onclick="ChooseSpectator">관전자로 보기</button>
+        </div>
+    }
+    else
+    {
+        @switch (_room.Status)
+        {
+            case RoomStatus.Setup when _isHost:
+                <RoomSetup Room="_room" />
+                break;
+
+            case RoomStatus.Setup:
+                <WaitingRoom Room="_room" MyTeamId="_myTeamId" />
+                break;
+
+            case RoomStatus.Finished:
+                <DraftResult Room="_room" IsHost="_isHost" />
+                break;
+
+            default:
+                <DraftBoard Room="_room" MyTeamId="_myTeamId" IsHost="_isHost" />
+                break;
+        }
+    }
+</div>
+}
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+
+    [SupplyParameterFromQuery(Name = "host")] private string? HostKey { get; set; }
+    [SupplyParameterFromQuery(Name = "me")] private string? MeTeam { get; set; }
+    [SupplyParameterFromQuery(Name = "role")] private string? Role { get; set; }
+
+    private DraftRoom? _room;
+    private DraftRoom? _subscribed;
+    private bool _isHost;
+    private Guid? _myTeamId;
+    private bool _spectator;
+    private bool _copied;
+
+    private string RoleLabel => _isHost
+        ? "진행자"
+        : _myTeamId is { } id && _room?.Teams.FirstOrDefault(t => t.Id == id) is { } team
+            ? $"팀장 · {team.Name}"
+            : "관전자";
+
+    private string StatusLabel => _room?.Status switch
+    {
+        RoomStatus.Setup => "설정 중",
+        RoomStatus.Running => "진행 중",
+        RoomStatus.Paused => "일시정지",
+        RoomStatus.Finished => "완료",
+        _ => "",
+    };
+
+    private string StatusClass => _room?.Status switch
+    {
+        RoomStatus.Running => "live",
+        RoomStatus.Paused => "warn",
+        RoomStatus.Finished => "done",
+        _ => "idle",
+    };
+
+    protected override void OnParametersSet()
+    {
+        _room = Store.Find(Code);
+
+        if (!ReferenceEquals(_subscribed, _room))
+        {
+            if (_subscribed is not null) _subscribed.Changed -= OnRoomChanged;
+            _subscribed = _room;
+            if (_subscribed is not null) _subscribed.Changed += OnRoomChanged;
+        }
+
+        _isHost = _room is not null && !string.IsNullOrEmpty(HostKey) && HostKey == _room.HostKey;
+        _spectator = Role == "spec";
+
+        // 팀이 지워졌을 수도 있으니 실제 존재하는 팀일 때만 팀장으로 인정한다.
+        _myTeamId = Guid.TryParse(MeTeam, out var parsed) && _room?.Teams.Any(t => t.Id == parsed) == true
+            ? parsed
+            : null;
+    }
+
+    private void OnRoomChanged() => InvokeAsync(StateHasChanged);
+
+    private void ChooseTeam(Guid teamId) => Nav.NavigateTo($"/room/{Code}?me={teamId}", replace: true);
+
+    private void ChooseSpectator() => Nav.NavigateTo($"/room/{Code}?role=spec", replace: true);
+
+    private void ClearRole() => Nav.NavigateTo($"/room/{Code}", replace: true);
+
+    private async Task CopyJoinLink()
+    {
+        var link = new Uri(new Uri(Nav.BaseUri), $"room/{Code}").ToString();
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", link);
+            _copied = true;
+        }
+        catch (JSException)
+        {
+            // http로 열었거나 권한이 없으면 클립보드 API가 막힌다. 조용히 넘어간다.
+            _copied = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_subscribed is not null) _subscribed.Changed -= OnRoomChanged;
+    }
+}

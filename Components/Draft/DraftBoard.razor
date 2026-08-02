@@ -1,0 +1,184 @@
+@* 진행 중 화면. 서버가 1초마다 방을 두드리므로 타이머와 지명 결과가 모두에게 동시에 반영된다. *@
+
+<div class="board">
+    <section class="turn-bar @(IsMyTurn ? "my-turn" : "")" style="--team-color:@(OnClock?.Color ?? "#7c8b9a")">
+        <div class="turn-meta">
+            <span class="turn-round">R@(Room.CurrentRound) / @Room.Rounds</span>
+            <span class="turn-pick">@(Room.PickIndex + 1)번째 픽 · 전체 @Room.TotalPicks</span>
+        </div>
+
+        <div class="turn-who">
+            <span class="turn-dot"></span>
+            <span class="turn-team">@(OnClock?.Name ?? "—")</span>
+            @if (!string.IsNullOrWhiteSpace(OnClock?.Captain))
+            {
+                <span class="turn-captain">@OnClock!.Captain</span>
+            }
+            @if (IsMyTurn)
+            {
+                <span class="badge badge-live">내 차례</span>
+            }
+        </div>
+
+        <div class="turn-clock">
+            @if (Room.Status == RoomStatus.Paused)
+            {
+                <span class="clock paused">일시정지</span>
+            }
+            else if (Room.SecondsLeft is { } left)
+            {
+                <span class="clock @(left <= 10 ? "urgent" : "")">@left</span>
+                <div class="clock-bar"><div class="clock-fill" style="width:@ClockPercent%"></div></div>
+            }
+            else
+            {
+                <span class="clock unlimited">@(Room.TurnSeconds == 0 ? "무제한" : "시간 종료")</span>
+            }
+        </div>
+
+        @if (IsHost)
+        {
+            <div class="host-controls">
+                @if (Room.Status == RoomStatus.Running)
+                {
+                    <button class="btn btn-sm" @onclick="Room.Pause">일시정지</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="Room.Resume">재개</button>
+                }
+                <button class="btn btn-sm" @onclick="Undo" disabled="@(Room.PickIndex == 0)">되돌리기</button>
+                <button class="btn btn-sm" @onclick="Room.SkipTurn" disabled="@(Room.Status != RoomStatus.Running)">턴 넘기기</button>
+            </div>
+        }
+    </section>
+
+    @if (_error is not null)
+    {
+        <p class="error-text board-error">@_error</p>
+    }
+
+    <div class="board-grid">
+        <section class="card pool">
+            <div class="card-head">
+                <h3>남은 선수 <span class="count">@Room.AvailablePlayers.Count()</span></h3>
+                <input class="input search" placeholder="이름 검색" @bind="_search" @bind:event="oninput" />
+            </div>
+
+            <div class="filter-row">
+                <button class="filter @(_position is null ? "on" : "")" @onclick="() => _position = null">전체</button>
+                @foreach (var pos in Positions.All)
+                {
+                    <button class="filter @(_position == pos ? "on" : "")" @onclick="() => _position = pos">@pos</button>
+                }
+            </div>
+
+            <div class="player-grid">
+                @foreach (var player in FilteredPool)
+                {
+                    <button class="player-card @(CanPick ? "pickable" : "")" @key="player.Id"
+                            disabled="@(!CanPick)" @onclick="() => Pick(player.Id)">
+                        <span class="player-name">@player.Name</span>
+                        <span class="player-meta">
+                            @if (player.Position != Positions.Unset)
+                            {
+                                <span class="tag">@player.Position</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(player.Tier))
+                            {
+                                <span class="tag tier">@player.Tier</span>
+                            }
+                        </span>
+                    </button>
+                }
+                @if (!FilteredPool.Any())
+                {
+                    <p class="muted">조건에 맞는 선수가 없습니다.</p>
+                }
+            </div>
+        </section>
+
+        <section class="rosters">
+            @foreach (var team in Room.Teams)
+            {
+                var roster = Room.RosterOf(team.Id).ToList();
+                <div class="roster @(team.Id == OnClock?.Id ? "on-clock" : "") @(team.Id == MyTeamId ? "mine" : "")"
+                     style="--team-color:@team.Color" @key="team.Id">
+                    <div class="roster-head">
+                        <span class="team-dot"></span>
+                        <span class="team-name">@team.Name</span>
+                        <span class="roster-count">@roster.Count / @Room.Rounds</span>
+                    </div>
+                    <ol class="roster-list">
+                        @for (var slot = 0; slot < Room.Rounds; slot++)
+                        {
+                            var picked = slot < roster.Count ? roster[slot] : null;
+                            <li class="roster-slot @(picked is null ? "empty" : "")">
+                                @if (picked is not null)
+                                {
+                                    <span class="slot-pick">#@picked.PickNumber</span>
+                                    <span class="slot-name">@picked.Name</span>
+                                    @if (picked.Position != Positions.Unset)
+                                    {
+                                        <span class="tag">@picked.Position</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="slot-empty">—</span>
+                                }
+                            </li>
+                        }
+                    </ol>
+                </div>
+            }
+        </section>
+    </div>
+
+    <section class="upcoming">
+        <span class="upcoming-label">다음 순서</span>
+        @foreach (var (number, team) in Room.UpcomingPicks(8))
+        {
+            <span class="upcoming-item @(number == Room.PickIndex + 1 ? "now" : "")" style="--team-color:@team.Color">
+                <span class="team-dot"></span>#@number @team.Name
+            </span>
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required DraftRoom Room { get; set; }
+    [Parameter] public Guid? MyTeamId { get; set; }
+    [Parameter] public bool IsHost { get; set; }
+
+    private string _search = "";
+    private string? _position;
+    private string? _error;
+
+    private Team? OnClock => Room.CurrentTeam;
+
+    private bool IsMyTurn => MyTeamId is { } id && OnClock?.Id == id;
+
+    /// <summary>내 차례이거나, 진행자가 대리 지명하는 경우.</summary>
+    private bool CanPick => Room.Status == RoomStatus.Running && (IsHost || IsMyTurn);
+
+    private int ClockPercent =>
+        Room.TurnSeconds > 0 && Room.SecondsLeft is { } left
+            ? Math.Clamp(left * 100 / Room.TurnSeconds, 0, 100)
+            : 0;
+
+    private IEnumerable<Player> FilteredPool =>
+        Room.AvailablePlayers
+            .Where(p => _position is null || p.Position == _position)
+            .Where(p => _search.Length == 0 || p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    private void Pick(Guid playerId)
+    {
+        _error = Room.Pick(playerId, MyTeamId ?? Guid.Empty, IsHost);
+    }
+
+    private void Undo()
+    {
+        _error = Room.UndoLastPick();
+    }
+}
