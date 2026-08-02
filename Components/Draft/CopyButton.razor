@@ -1,0 +1,27 @@
+@inject IJSRuntime JS
+
+@* 클립보드 복사 버튼. 복사할 내용은 누른 시점에 만들어야 하므로 문자열이 아니라 함수를 받는다. *@
+
+<button class="btn @Class" @onclick="Copy">@(_copied ? $"{Label} ✓" : Label)</button>
+
+@code {
+    [Parameter, EditorRequired] public required Func<string> Text { get; set; }
+    [Parameter] public string Label { get; set; } = "복사";
+    [Parameter] public string Class { get; set; } = "";
+
+    private bool _copied;
+
+    private async Task Copy()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", Text());
+            _copied = true;
+        }
+        catch (JSException)
+        {
+            // http로 열었거나 권한이 없으면 클립보드 API가 막힌다. 조용히 넘어간다.
+            _copied = false;
+        }
+    }
+}

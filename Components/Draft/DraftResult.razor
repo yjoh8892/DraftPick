@@ -1,6 +1,10 @@
-@inject IJSRuntime JS
-
 @* 드래프트 완료 화면. 디스코드에 그대로 붙여넣을 수 있게 텍스트로 뽑아준다. *@
+
+@{
+    var rosters = Room.RostersByTeam();
+    var teamsById = Room.Teams.ToDictionary(t => t.Id);
+    var undrafted = Room.AvailablePlayers.ToList();
+}
 
 <div class="result">
     <div class="card result-head">
@@ -8,11 +12,11 @@
             <h2>드래프트 완료</h2>
             <p class="muted">
                 @(Room.Teams.Count)개 팀 · @(Room.Rounds)라운드 ·
-                @(Room.OrderMode == DraftOrderMode.Snake ? "스네이크" : "순차") 방식으로 총 @(Room.TotalPicks)번의 지명이 끝났습니다.
+                @Room.OrderMode.Label() 방식으로 총 @(Room.TotalPicks)번의 지명이 끝났습니다.
             </p>
         </div>
         <div class="row-actions">
-            <button class="btn btn-primary" @onclick="CopyResult">@(_copied ? "복사됨 ✓" : "결과 텍스트 복사")</button>
+            <CopyButton Text="BuildText" Label="결과 텍스트 복사" Class="btn-primary" />
             @if (IsHost)
             {
                 <button class="btn" @onclick="Room.ResetToSetup">설정으로 돌아가기</button>
@@ -24,7 +28,7 @@
     <div class="result-rosters">
         @foreach (var team in Room.Teams)
         {
-            <section class="card roster-card" style="--team-color:@team.Color" @key="team.Id">
+            <section class="card roster" style="--team-color:@team.Color" @key="team.Id">
                 <div class="roster-head">
                     <span class="team-dot"></span>
                     <span class="team-name">@team.Name</span>
@@ -34,19 +38,12 @@
                     }
                 </div>
                 <ol class="roster-list">
-                    @foreach (var player in Room.RosterOf(team.Id))
+                    @foreach (var player in rosters[team.Id])
                     {
                         <li class="roster-slot">
                             <span class="slot-pick">#@player.PickNumber</span>
                             <span class="slot-name">@player.Name</span>
-                            @if (player.Position != Positions.Unset)
-                            {
-                                <span class="tag">@player.Position</span>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(player.Tier))
-                            {
-                                <span class="tag tier">@player.Tier</span>
-                            }
+                            <PlayerTags Player="player" />
                         </li>
                     }
                 </ol>
@@ -57,30 +54,27 @@
     <section class="card">
         <h3>지명 순서 전체 기록</h3>
         <ol class="pick-log">
-            @foreach (var player in DraftedInOrder)
+            @foreach (var player in Room.Players.Where(p => p.IsDrafted).OrderBy(p => p.PickNumber))
             {
-                var team = Room.Teams.FirstOrDefault(t => t.Id == player.DraftedBy);
-                <li style="--team-color:@(team?.Color ?? "#7c8b9a")">
+                var team = teamsById.GetValueOrDefault(player.DraftedBy!.Value);
+                <li style="--team-color:@(team?.Color ?? TeamColors.Neutral)">
                     <span class="slot-pick">#@player.PickNumber</span>
                     <span class="team-dot"></span>
                     <span class="log-team">@(team?.Name ?? "?")</span>
                     <span class="log-arrow">→</span>
                     <span class="slot-name">@player.Name</span>
-                    @if (player.Position != Positions.Unset)
-                    {
-                        <span class="tag">@player.Position</span>
-                    }
+                    <PlayerTags Player="player" ShowTier="false" />
                 </li>
             }
         </ol>
     </section>
 
-    @if (Undrafted.Count > 0)
+    @if (undrafted.Count > 0)
     {
         <section class="card">
-            <h3>미지명 선수 <span class="count">@Undrafted.Count</span></h3>
+            <h3>미지명 선수 <span class="count">@undrafted.Count</span></h3>
             <div class="chip-wrap">
-                @foreach (var player in Undrafted)
+                @foreach (var player in undrafted)
                 {
                     <span class="chip">@player.Name</span>
                 }
@@ -93,37 +87,13 @@
     [Parameter, EditorRequired] public required DraftRoom Room { get; set; }
     [Parameter] public bool IsHost { get; set; }
 
-    private bool _copied;
-
-    private IEnumerable<Player> DraftedInOrder =>
-        Room.Players.Where(p => p.IsDrafted).OrderBy(p => p.PickNumber);
-
-    private List<Player> Undrafted => Room.Players.Where(p => !p.IsDrafted).ToList();
-
-    private void Undo()
-    {
-        Room.UndoLastPick();
-    }
-
-    private async Task CopyResult()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", BuildText());
-            _copied = true;
-        }
-        catch (JSException)
-        {
-            _copied = false;
-        }
-    }
+    private void Undo() => Room.UndoLastPick();
 
     private string BuildText()
     {
-        var mode = Room.OrderMode == DraftOrderMode.Snake ? "스네이크" : "순차";
         var lines = new List<string>
         {
-            $"[{Room.Title}] {mode} · {Room.Rounds}라운드",
+            $"[{Room.Title}] {Room.OrderMode.Label()} · {Room.Rounds}라운드",
             "",
         };
 

@@ -14,7 +14,7 @@
             <h3>규칙</h3>
             <dl class="rule-list">
                 <dt>지명 순서</dt>
-                <dd>@(Room.OrderMode == DraftOrderMode.Snake ? "스네이크 (1→2→3 / 3→2→1)" : "순차 (매 라운드 동일)")</dd>
+                <dd>@Room.OrderMode.Label() (@Room.OrderMode.Pattern())</dd>
 
                 <dt>라운드</dt>
                 <dd>@Room.Rounds 라운드 · 팀당 @(Room.Rounds)명</dd>
@@ -70,6 +70,7 @@
                                 <small>@player.Position</small>
                             }
                         </span>
+
                     }
                 </div>
             }

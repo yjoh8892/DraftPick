@@ -1,7 +1,15 @@
 @* 진행 중 화면. 서버가 1초마다 방을 두드리므로 타이머와 지명 결과가 모두에게 동시에 반영된다. *@
 
+@{
+    // 이 화면은 초당 한 번 통째로 다시 그려진다. 아래 값들은 그때마다 한 번씩만 계산한다.
+    var onClock = Room.CurrentTeam;
+    var available = Room.AvailablePlayers.ToList();
+    var pool = Filter(available);
+    var rosters = Room.RostersByTeam();
+}
+
 <div class="board">
-    <section class="turn-bar @(IsMyTurn ? "my-turn" : "")" style="--team-color:@(OnClock?.Color ?? "#7c8b9a")">
+    <section class="turn-bar @(IsMyTurn ? "my-turn" : "")" style="--team-color:@(onClock?.Color ?? TeamColors.Neutral)">
         <div class="turn-meta">
             <span class="turn-round">R@(Room.CurrentRound) / @Room.Rounds</span>
             <span class="turn-pick">@(Room.PickIndex + 1)번째 픽 · 전체 @Room.TotalPicks</span>
@@ -9,10 +17,10 @@
 
         <div class="turn-who">
             <span class="turn-dot"></span>
-            <span class="turn-team">@(OnClock?.Name ?? "—")</span>
-            @if (!string.IsNullOrWhiteSpace(OnClock?.Captain))
+            <span class="turn-team">@(onClock?.Name ?? "—")</span>
+            @if (!string.IsNullOrWhiteSpace(onClock?.Captain))
             {
-                <span class="turn-captain">@OnClock!.Captain</span>
+                <span class="turn-captain">@onClock!.Captain</span>
             }
             @if (IsMyTurn)
             {
@@ -25,6 +33,10 @@
             {
                 <span class="clock paused">일시정지</span>
             }
+            else if (Room.AwaitingHostAfterTimeout)
+            {
+                <span class="clock unlimited">시간 종료</span>
+            }
             else if (Room.SecondsLeft is { } left)
             {
                 <span class="clock @(left <= 10 ? "urgent" : "")">@left</span>
@@ -32,7 +44,7 @@
             }
             else
             {
-                <span class="clock unlimited">@(Room.TurnSeconds == 0 ? "무제한" : "시간 종료")</span>
+                <span class="clock unlimited">무제한</span>
             }
         </div>
 
@@ -47,7 +59,7 @@
                 {
                     <button class="btn btn-sm btn-primary" @onclick="Room.Resume">재개</button>
                 }
-                <button class="btn btn-sm" @onclick="Undo" disabled="@(Room.PickIndex == 0)">되돌리기</button>
+                <button class="btn btn-sm" @onclick="Undo" disabled="@(!Room.CanUndo)">되돌리기</button>
                 <button class="btn btn-sm" @onclick="Room.SkipTurn" disabled="@(Room.Status != RoomStatus.Running)">턴 넘기기</button>
             </div>
         }
@@ -61,7 +73,7 @@
     <div class="board-grid">
         <section class="card pool">
             <div class="card-head">
-                <h3>남은 선수 <span class="count">@Room.AvailablePlayers.Count()</span></h3>
+                <h3>남은 선수 <span class="count">@available.Count</span></h3>
                 <input class="input search" placeholder="이름 검색" @bind="_search" @bind:event="oninput" />
             </div>
 
@@ -74,24 +86,15 @@
             </div>
 
             <div class="player-grid">
-                @foreach (var player in FilteredPool)
+                @foreach (var player in pool)
                 {
-                    <button class="player-card @(CanPick ? "pickable" : "")" @key="player.Id"
+                    <button class="player-card tile @(CanPick ? "pickable" : "")" @key="player.Id"
                             disabled="@(!CanPick)" @onclick="() => Pick(player.Id)">
                         <span class="player-name">@player.Name</span>
-                        <span class="player-meta">
-                            @if (player.Position != Positions.Unset)
-                            {
-                                <span class="tag">@player.Position</span>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(player.Tier))
-                            {
-                                <span class="tag tier">@player.Tier</span>
-                            }
-                        </span>
+                        <span class="player-meta"><PlayerTags Player="player" /></span>
                     </button>
                 }
-                @if (!FilteredPool.Any())
+                @if (pool.Count == 0)
                 {
                     <p class="muted">조건에 맞는 선수가 없습니다.</p>
                 }
@@ -101,8 +104,8 @@
         <section class="rosters">
             @foreach (var team in Room.Teams)
             {
-                var roster = Room.RosterOf(team.Id).ToList();
-                <div class="roster @(team.Id == OnClock?.Id ? "on-clock" : "") @(team.Id == MyTeamId ? "mine" : "")"
+                var roster = rosters[team.Id];
+                <div class="roster @(team.Id == onClock?.Id ? "on-clock" : "") @(team.Id == MyTeamId ? "mine" : "")"
                      style="--team-color:@team.Color" @key="team.Id">
                     <div class="roster-head">
                         <span class="team-dot"></span>
@@ -118,10 +121,7 @@
                                 {
                                     <span class="slot-pick">#@picked.PickNumber</span>
                                     <span class="slot-name">@picked.Name</span>
-                                    @if (picked.Position != Positions.Unset)
-                                    {
-                                        <span class="tag">@picked.Position</span>
-                                    }
+                                    <PlayerTags Player="picked" ShowTier="false" />
                                 }
                                 else
                                 {
@@ -149,36 +149,33 @@
 @code {
     [Parameter, EditorRequired] public required DraftRoom Room { get; set; }
     [Parameter] public Guid? MyTeamId { get; set; }
-    [Parameter] public bool IsHost { get; set; }
+
+    /// <summary>진행자 키. 진행자인지 판단하는 건 방이 하고, 화면은 키만 전달한다.</summary>
+    [Parameter] public string? HostKey { get; set; }
 
     private string _search = "";
     private string? _position;
     private string? _error;
 
-    private Team? OnClock => Room.CurrentTeam;
+    private bool IsHost => Room.IsHost(HostKey);
 
-    private bool IsMyTurn => MyTeamId is { } id && OnClock?.Id == id;
+    private bool IsMyTurn => MyTeamId is { } id && Room.CurrentTeam?.Id == id;
 
-    /// <summary>내 차례이거나, 진행자가 대리 지명하는 경우.</summary>
-    private bool CanPick => Room.Status == RoomStatus.Running && (IsHost || IsMyTurn);
+    /// <summary>규칙은 방이 정한다. 화면은 같은 판단을 다시 구현하지 않는다.</summary>
+    private bool CanPick => Room.CanPick(MyTeamId ?? Guid.Empty, HostKey);
 
     private int ClockPercent =>
         Room.TurnSeconds > 0 && Room.SecondsLeft is { } left
             ? Math.Clamp(left * 100 / Room.TurnSeconds, 0, 100)
             : 0;
 
-    private IEnumerable<Player> FilteredPool =>
-        Room.AvailablePlayers
+    private List<Player> Filter(List<Player> available) =>
+        available
             .Where(p => _position is null || p.Position == _position)
-            .Where(p => _search.Length == 0 || p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+            .Where(p => _search.Length == 0 || p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-    private void Pick(Guid playerId)
-    {
-        _error = Room.Pick(playerId, MyTeamId ?? Guid.Empty, IsHost);
-    }
+    private void Pick(Guid playerId) => _error = Room.Pick(playerId, MyTeamId ?? Guid.Empty, HostKey);
 
-    private void Undo()
-    {
-        _error = Room.UndoLastPick();
-    }
+    private void Undo() => _error = Room.UndoLastPick();
 }

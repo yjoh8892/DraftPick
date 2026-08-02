@@ -27,7 +27,8 @@ public sealed class DraftRoomStore
     public DraftRoom? Find(string? code) =>
         !string.IsNullOrWhiteSpace(code) && _rooms.TryGetValue(code.Trim(), out var room) ? room : null;
 
-    public IReadOnlyCollection<DraftRoom> All => _rooms.Values.ToList();
+    /// <summary>ConcurrentDictionary.Values가 이미 스냅샷을 만들어 주므로 따로 복사하지 않는다.</summary>
+    public IEnumerable<DraftRoom> All => _rooms.Values;
 
     /// <summary>오래 방치된 방을 치운다.</summary>
     public int RemoveIdle(TimeSpan maxIdle)

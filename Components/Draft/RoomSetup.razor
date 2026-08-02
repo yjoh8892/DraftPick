@@ -13,16 +13,14 @@
             <div class="field">
                 <span>지명 순서</span>
                 <div class="mode-choice">
-                    <button class="mode-btn @(Room.OrderMode == DraftOrderMode.Snake ? "on" : "")"
-                            @onclick="() => SetMode(DraftOrderMode.Snake)">
-                        <b>스네이크</b>
-                        <small>1→2→3 / 3→2→1</small>
-                    </button>
-                    <button class="mode-btn @(Room.OrderMode == DraftOrderMode.Sequential ? "on" : "")"
-                            @onclick="() => SetMode(DraftOrderMode.Sequential)">
-                        <b>순차</b>
-                        <small>1→2→3 / 1→2→3</small>
-                    </button>
+                    @foreach (var mode in Enum.GetValues<DraftOrderMode>())
+                    {
+                        <button class="mode-btn tile @(Room.OrderMode == mode ? "on" : "")"
+                                @onclick="() => SetMode(mode)">
+                            <b>@mode.Label()</b>
+                            <small>@mode.Pattern()</small>
+                        </button>
+                    }
                 </div>
                 <p class="hint">
                     @(Room.OrderMode == DraftOrderMode.Snake
@@ -34,13 +32,13 @@
             <div class="field-row">
                 <label class="field">
                     <span>라운드 수 (팀당 인원)</span>
-                    <input class="input" type="number" min="1" max="15"
+                    <input class="input" type="number" min="@DraftRoom.MinRounds" max="@DraftRoom.MaxRounds"
                            @bind="Room.Rounds" @bind:after="Notify" />
                 </label>
 
                 <label class="field">
                     <span>턴 제한시간 (초, 0=무제한)</span>
-                    <input class="input" type="number" min="0" max="600" step="5"
+                    <input class="input" type="number" min="0" max="@DraftRoom.MaxTurnSeconds" step="5"
                            @bind="Room.TurnSeconds" @bind:after="Notify" />
                 </label>
             </div>
@@ -66,8 +64,9 @@
             }
 
             <div class="team-editor">
-                @foreach (var (team, index) in Room.Teams.Select((t, i) => (t, i)))
+                @for (var index = 0; index < Room.Teams.Count; index++)
                 {
+                    var team = Room.Teams[index];
                     <div class="team-row" style="--team-color:@team.Color" @key="team.Id">
                         <span class="pick-order" title="@(index + 1)번 지명권">@(index + 1)</span>
 
@@ -138,7 +137,10 @@
                 <div class="row-actions">
                     <button class="btn btn-primary btn-sm" @onclick="ImportBulk"
                             disabled="@(string.IsNullOrWhiteSpace(_bulk))">명단 추가</button>
-                    <span class="hint">한 줄에 한 명. <code>이름,포지션,티어</code> 순서이고 뒤 두 개는 생략해도 됩니다.</span>
+                    <span class="hint">
+                        한 줄에 한 명. <code>이름,포지션,티어</code> 순서이고 뒤 두 개는 생략해도 됩니다.
+                        엑셀에서 그대로 복사해 붙여넣어도 됩니다(머리글 행은 알아서 건너뜁니다).
+                    </span>
                 </div>
             </details>
 
@@ -175,6 +177,10 @@
         </section>
 
         <section class="card start-card">
+            @{
+                // 락을 잡고 도는 검사라 렌더당 한 번만 부른다.
+                var problem = Room.ValidateForStart();
+            }
             <div class="start-summary">
                 <div>
                     <span class="summary-num">@Room.Teams.Count</span>
@@ -187,12 +193,12 @@
                 </div>
                 <span class="summary-x">=</span>
                 <div>
-                    <span class="summary-num @(Room.Players.Count >= Needed ? "ok" : "bad")">@Needed</span>
+                    <span class="summary-num @(Room.Players.Count >= Room.TotalPicks ? "ok" : "bad")">@Room.TotalPicks</span>
                     <span class="summary-label">필요 인원 (등록 @(Room.Players.Count)명)</span>
                 </div>
             </div>
 
-            @if (Room.ValidateForStart() is { } problem)
+            @if (problem is not null)
             {
                 <p class="error-text">@problem</p>
             }
@@ -201,7 +207,7 @@
                 <p class="ok-text">준비 완료. 팀장들이 방 코드로 입장했는지 확인하고 시작하세요.</p>
             }
 
-            <button class="btn btn-primary btn-lg" @onclick="Start" disabled="@(Room.ValidateForStart() is not null)">
+            <button class="btn btn-primary btn-lg" @onclick="Start" disabled="@(problem is not null)">
                 드래프트 시작
             </button>
             @if (_startError is not null)
@@ -226,8 +232,6 @@
     private string _newName = "";
     private string _newPosition = Positions.Unset;
     private string _newTier = Tiers.Unset;
-
-    private int Needed => Room.Teams.Count * Room.Rounds;
 
     private static string TierLabel(string tier) => tier == Tiers.Unset ? "티어 미지정" : tier;
 

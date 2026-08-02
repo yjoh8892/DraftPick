@@ -11,6 +11,9 @@ public sealed class Team
 
 public static class TeamColors
 {
+    /// <summary>아직 팀이 정해지지 않은 자리에 쓰는 무채색.</summary>
+    public const string Neutral = "#7c8b9a";
+
     public static readonly string[] Palette =
     [
         "#4f7cff", "#ff5c8a", "#2fc08b", "#f2a33c",

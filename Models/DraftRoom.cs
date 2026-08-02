@@ -10,6 +10,16 @@ public enum DraftOrderMode
     Sequential,
 }
 
+public static class DraftOrderModes
+{
+    /// <summary>화면과 결과 텍스트에 쓰는 짧은 이름. 방식을 추가하면 여기만 고치면 된다.</summary>
+    public static string Label(this DraftOrderMode mode) =>
+        mode == DraftOrderMode.Snake ? "스네이크" : "순차";
+
+    public static string Pattern(this DraftOrderMode mode) =>
+        mode == DraftOrderMode.Snake ? "1→2→3 / 3→2→1" : "1→2→3 / 1→2→3";
+}
+
 public enum RoomStatus
 {
     Setup,
@@ -36,12 +46,37 @@ public sealed class DraftRoom
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastActivityAt { get; private set; } = DateTimeOffset.UtcNow;
 
+    public const int MinRounds = 1;
+    public const int MaxRounds = 15;
+    public const int MaxTurnSeconds = 600;
+
+    private DraftOrderMode _orderMode = DraftOrderMode.Snake;
+    private int _rounds = 5;
+    private int _turnSeconds = 60;
+
     public string Title { get; set; } = "내전 드래프트";
-    public DraftOrderMode OrderMode { get; set; } = DraftOrderMode.Snake;
-    public int Rounds { get; set; } = 5;
+
+    // 아래 세 값은 TotalPicks와 턴 타이머를 결정한다. 시작한 뒤에 바뀌면 진행 중인 드래프트가
+    // 어긋나므로, 화면의 min/max 속성에 기대지 않고 세터가 직접 막고 범위도 좁힌다.
+
+    public DraftOrderMode OrderMode
+    {
+        get => _orderMode;
+        set { if (Status == RoomStatus.Setup) _orderMode = value; }
+    }
+
+    public int Rounds
+    {
+        get => _rounds;
+        set { if (Status == RoomStatus.Setup) _rounds = Math.Clamp(value, MinRounds, MaxRounds); }
+    }
 
     /// <summary>턴당 제한시간(초). 0이면 무제한.</summary>
-    public int TurnSeconds { get; set; } = 60;
+    public int TurnSeconds
+    {
+        get => _turnSeconds;
+        set { if (Status == RoomStatus.Setup) _turnSeconds = Math.Clamp(value, 0, MaxTurnSeconds); }
+    }
 
     /// <summary>시간이 다 되면 남은 선수 중 맨 위를 자동 지명할지. false면 타이머만 멈추고 기다린다.</summary>
     public bool AutoPickOnTimeout { get; set; } = true;
@@ -78,6 +113,48 @@ public sealed class DraftRoom
     public IEnumerable<Player> RosterOf(Guid teamId) =>
         _players.Where(p => p.DraftedBy == teamId).OrderBy(p => p.PickNumber);
 
+    /// <summary>
+    /// 모든 팀의 로스터를 한 번의 순회로 구한다. 화면이 팀마다 <see cref="RosterOf"/>를 부르면
+    /// 전체 선수를 팀 수만큼 다시 훑게 되는데, 이 화면은 1초에 한 번씩 다시 그려진다.
+    /// </summary>
+    public Dictionary<Guid, List<Player>> RostersByTeam()
+    {
+        var rosters = _teams.ToDictionary(t => t.Id, _ => new List<Player>());
+
+        foreach (var player in _players.Where(p => p.IsDrafted).OrderBy(p => p.PickNumber))
+        {
+            if (rosters.TryGetValue(player.DraftedBy!.Value, out var roster)) roster.Add(player);
+        }
+        return rosters;
+    }
+
+    /// <summary>진행자 키가 맞는지. 누가 진행자인지는 키를 가진 이 객체만 판단할 수 있다.</summary>
+    public bool IsHost(string? hostKey) => !string.IsNullOrEmpty(hostKey) && hostKey == HostKey;
+
+    public bool CanUndo => PickIndex > 0;
+
+    /// <summary>
+    /// 시간은 다 됐는데 자동 지명이 꺼져 있어 진행자를 기다리는 상태.
+    /// 이때 <see cref="TurnEndsAt"/>은 "무제한"일 때와 똑같이 null이라, 화면이 두 필드로 되짚지 않도록 여기서 이름을 준다.
+    /// </summary>
+    public bool AwaitingHostAfterTimeout =>
+        Status == RoomStatus.Running && TurnSeconds > 0 && TurnEndsAt is null;
+
+    /// <summary>지명이 막히는 이유. 막을 이유가 없으면 null. <see cref="Pick"/>과 같은 규칙을 쓴다.</summary>
+    public string? WhyCannotPick(Guid actingTeamId, string? hostKey)
+    {
+        if (Status == RoomStatus.Paused) return "일시정지 중입니다.";
+        if (Status != RoomStatus.Running) return "진행 중인 드래프트가 아닙니다.";
+
+        var current = TeamAtPick(PickIndex);
+        if (current is null) return "남은 픽이 없습니다.";
+        if (!IsHost(hostKey) && current.Id != actingTeamId) return "지금은 당신의 차례가 아닙니다.";
+
+        return null;
+    }
+
+    public bool CanPick(Guid actingTeamId, string? hostKey) => WhyCannotPick(actingTeamId, hostKey) is null;
+
     /// <summary>남은 초. 무제한이면 null, 이미 지났으면 0.</summary>
     public int? SecondsLeft
     {
@@ -113,12 +190,13 @@ public sealed class DraftRoom
 
     // ── 설정 단계 ────────────────────────────────────────────────────────────
 
-    public Team AddTeam(string name = "", string captain = "")
+    /// <summary>설정 단계가 아니면 아무것도 하지 않고 null을 준다(다른 설정 메서드와 같은 관례).</summary>
+    public Team? AddTeam(string name = "", string captain = "")
     {
         Team team;
         lock (_gate)
         {
-            if (Status != RoomStatus.Setup) throw new InvalidOperationException("설정 단계에서만 팀을 추가할 수 있습니다.");
+            if (Status != RoomStatus.Setup) return null;
             team = new Team
             {
                 Name = string.IsNullOrWhiteSpace(name) ? $"팀 {_teams.Count + 1}" : name.Trim(),
@@ -137,11 +215,7 @@ public sealed class DraftRoom
         {
             if (Status != RoomStatus.Setup) return;
             _teams.RemoveAll(t => t.Id == teamId);
-            foreach (var p in _players.Where(p => p.DraftedBy == teamId))
-            {
-                p.DraftedBy = null;
-                p.PickNumber = null;
-            }
+            foreach (var p in _players.Where(p => p.DraftedBy == teamId)) p.Release();
         }
         Touch();
     }
@@ -178,7 +252,10 @@ public sealed class DraftRoom
         return player;
     }
 
-    /// <summary>한 줄에 한 명씩. "이름", "이름,포지션", "이름,포지션,티어" 모두 받는다.</summary>
+    /// <summary>
+    /// 한 줄에 한 명씩. "이름", "이름,포지션", "이름,포지션,티어" 모두 받는다.
+    /// 엑셀에서 복사하면 탭으로 나뉜 CRLF 텍스트가 들어오는데 그것도 그대로 받는다.
+    /// </summary>
     public int ImportPlayers(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return 0;
@@ -186,22 +263,55 @@ public sealed class DraftRoom
         var added = 0;
         lock (_gate)
         {
+            var isFirstRow = true;
             foreach (var raw in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                var parts = raw.Split([',', '\t'], StringSplitOptions.TrimEntries);
-                var name = parts[0];
-                if (name.Length == 0) continue;
+                var cells = SplitRow(raw);
+                if (cells[0].Length == 0) continue;
 
-                var position = parts.Length > 1 && Positions.All.Contains(parts[1]) ? parts[1] : Positions.Unset;
-                var tier = Tiers.Normalize(parts.Length > 2 ? parts[2] : null);
+                // 표를 통째로 복사하면 머리글이 딸려온다. 첫 줄에 한해 걸러낸다.
+                if (isFirstRow)
+                {
+                    isFirstRow = false;
+                    if (LooksLikeHeader(cells)) continue;
+                }
 
-                _players.Add(new Player { Name = name, Position = position, Tier = tier });
+                var position = cells.Length > 1 && Positions.All.Contains(cells[1]) ? cells[1] : Positions.Unset;
+                var tier = Tiers.Normalize(cells.Length > 2 ? cells[2] : null);
+
+                _players.Add(new Player { Name = cells[0], Position = position, Tier = tier });
                 added++;
             }
         }
         if (added > 0) Touch();
         return added;
     }
+
+    /// <summary>
+    /// 엑셀 클립보드는 탭 구분이다. 탭이 있으면 쉼표는 구분자가 아니라 값의 일부로 본다
+    /// ("홍길동, 별명" 같은 이름이 쪼개지지 않도록).
+    /// </summary>
+    private static string[] SplitRow(string row)
+    {
+        var separator = row.Contains('\t') ? '\t' : ',';
+        var cells = row.Split(separator, StringSplitOptions.TrimEntries);
+
+        for (var i = 0; i < cells.Length; i++) cells[i] = Unquote(cells[i]);
+        return cells;
+    }
+
+    /// <summary>셀에 줄바꿈이나 따옴표가 있으면 엑셀이 "..."로 감싸고 내부 따옴표는 ""로 이스케이프한다.</summary>
+    private static string Unquote(string cell) =>
+        cell.Length >= 2 && cell[0] == '"' && cell[^1] == '"'
+            ? cell[1..^1].Replace("\"\"", "\"")
+            : cell;
+
+    private static readonly string[] NameHeaders = ["이름", "성명", "닉네임", "선수", "선수명", "name", "player"];
+    private static readonly string[] PositionHeaders = ["포지션", "역할", "역할군", "position", "role"];
+
+    private static bool LooksLikeHeader(string[] cells) =>
+        NameHeaders.Contains(cells[0], StringComparer.OrdinalIgnoreCase)
+        || (cells.Length > 1 && PositionHeaders.Contains(cells[1], StringComparer.OrdinalIgnoreCase));
 
     public void RemovePlayer(Guid playerId)
     {
@@ -267,30 +377,27 @@ public sealed class DraftRoom
             if (Status != RoomStatus.Setup) return "이미 시작된 드래프트입니다.";
             Status = RoomStatus.Running;
             PickIndex = 0;
-            _pausedRemaining = null;
             ResetTurnClockNoLock();
         }
         Touch();
         return null;
     }
 
-    /// <summary>선수 지명. 성공하면 null, 실패하면 사유.</summary>
-    public string? Pick(Guid playerId, Guid actingTeamId, bool byHost)
+    /// <summary>
+    /// 선수 지명. 성공하면 null, 실패하면 사유.
+    /// 진행자 여부는 호출자가 알려주는 게 아니라 <paramref name="hostKey"/>를 받아 여기서 직접 판정한다.
+    /// </summary>
+    public string? Pick(Guid playerId, Guid actingTeamId, string? hostKey)
     {
         lock (_gate)
         {
-            if (Status == RoomStatus.Paused) return "일시정지 중입니다.";
-            if (Status != RoomStatus.Running) return "진행 중인 드래프트가 아닙니다.";
-
-            var current = TeamAtPick(PickIndex);
-            if (current is null) return "남은 픽이 없습니다.";
-            if (!byHost && current.Id != actingTeamId) return "지금은 당신의 차례가 아닙니다.";
+            if (WhyCannotPick(actingTeamId, hostKey) is { } reason) return reason;
 
             var player = _players.FirstOrDefault(p => p.Id == playerId);
             if (player is null) return "없는 선수입니다.";
             if (player.IsDrafted) return "이미 지명된 선수입니다.";
 
-            CommitPickNoLock(player, current);
+            CommitPickNoLock(player, TeamAtPick(PickIndex)!);
         }
         Touch();
         return null;
@@ -306,8 +413,7 @@ public sealed class DraftRoom
             var last = _players.FirstOrDefault(p => p.PickNumber == PickIndex);
             if (last is null) return "마지막 픽을 찾을 수 없습니다.";
 
-            last.DraftedBy = null;
-            last.PickNumber = null;
+            last.Release();
             PickIndex--;
 
             if (Status == RoomStatus.Finished) Status = RoomStatus.Running;
@@ -351,9 +457,9 @@ public sealed class DraftRoom
         {
             if (Status != RoomStatus.Paused) return;
             Status = RoomStatus.Running;
-            TurnEndsAt = _pausedRemaining is { } left ? DateTimeOffset.UtcNow + left : null;
+            if (_pausedRemaining is { } left) TurnEndsAt = DateTimeOffset.UtcNow + left;
+            else ResetTurnClockNoLock();
             _pausedRemaining = null;
-            if (TurnEndsAt is null && TurnSeconds > 0) ResetTurnClockNoLock();
         }
         Touch();
     }
@@ -367,11 +473,7 @@ public sealed class DraftRoom
             PickIndex = 0;
             TurnEndsAt = null;
             _pausedRemaining = null;
-            foreach (var p in _players)
-            {
-                p.DraftedBy = null;
-                p.PickNumber = null;
-            }
+            foreach (var p in _players) p.Release();
         }
         Touch();
     }
@@ -411,8 +513,7 @@ public sealed class DraftRoom
 
     private void CommitPickNoLock(Player player, Team team)
     {
-        player.DraftedBy = team.Id;
-        player.PickNumber = PickIndex + 1;
+        player.AssignTo(team.Id, PickIndex + 1);
         AdvanceNoLock();
     }
 
@@ -423,7 +524,6 @@ public sealed class DraftRoom
         {
             Status = RoomStatus.Finished;
             TurnEndsAt = null;
-            _pausedRemaining = null;
         }
         else
         {

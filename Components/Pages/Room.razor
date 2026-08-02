@@ -32,9 +32,7 @@ else
             {
                 <button class="btn btn-ghost btn-sm" @onclick="ClearRole">역할 변경</button>
             }
-            <button class="btn btn-ghost btn-sm" @onclick="CopyJoinLink">
-                @(_copied ? "복사됨 ✓" : "참가 링크 복사")
-            </button>
+            <CopyButton Text="JoinLink" Label="참가 링크 복사" Class="btn-ghost btn-sm" />
         </div>
     </div>
 
@@ -53,7 +51,7 @@ else
                 <div class="team-choice-grid">
                     @foreach (var team in _room.Teams)
                     {
-                        <button class="team-choice" style="--team-color:@team.Color" @onclick="() => ChooseTeam(team.Id)">
+                        <button class="team-choice tile" style="--team-color:@team.Color" @onclick="() => ChooseTeam(team.Id)">
                             <span class="team-choice-name">@team.Name</span>
                             @if (!string.IsNullOrWhiteSpace(team.Captain))
                             {
@@ -84,7 +82,7 @@ else
                 break;
 
             default:
-                <DraftBoard Room="_room" MyTeamId="_myTeamId" IsHost="_isHost" />
+                <DraftBoard Room="_room" MyTeamId="_myTeamId" HostKey="HostKey" />
                 break;
         }
     }
@@ -103,7 +101,6 @@ else
     private bool _isHost;
     private Guid? _myTeamId;
     private bool _spectator;
-    private bool _copied;
 
     private string RoleLabel => _isHost
         ? "진행자"
@@ -139,7 +136,7 @@ else
             if (_subscribed is not null) _subscribed.Changed += OnRoomChanged;
         }
 
-        _isHost = _room is not null && !string.IsNullOrEmpty(HostKey) && HostKey == _room.HostKey;
+        _isHost = _room?.IsHost(HostKey) == true;
         _spectator = Role == "spec";
 
         // 팀이 지워졌을 수도 있으니 실제 존재하는 팀일 때만 팀장으로 인정한다.
@@ -156,20 +153,7 @@ else
 
     private void ClearRole() => Nav.NavigateTo($"/room/{Code}", replace: true);
 
-    private async Task CopyJoinLink()
-    {
-        var link = new Uri(new Uri(Nav.BaseUri), $"room/{Code}").ToString();
-        try
-        {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", link);
-            _copied = true;
-        }
-        catch (JSException)
-        {
-            // http로 열었거나 권한이 없으면 클립보드 API가 막힌다. 조용히 넘어간다.
-            _copied = false;
-        }
-    }
+    private string JoinLink() => new Uri(new Uri(Nav.BaseUri), $"room/{Code}").ToString();
 
     public void Dispose()
     {

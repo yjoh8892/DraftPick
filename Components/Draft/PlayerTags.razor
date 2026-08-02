@@ -1,0 +1,17 @@
+@* 선수의 포지션·티어 배지. 선수 카드, 로스터, 픽 로그가 모두 이 모양을 쓴다. *@
+
+@if (Player.Position != Positions.Unset)
+{
+    <span class="tag">@Player.Position</span>
+}
+@if (ShowTier && Player.Tier != Tiers.Unset)
+{
+    <span class="tag tier">@Player.Tier</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public required Player Player { get; set; }
+
+    /// <summary>진행 중 보드에서는 자리가 좁아 티어를 감춘다.</summary>
+    [Parameter] public bool ShowTier { get; set; } = true;
+}

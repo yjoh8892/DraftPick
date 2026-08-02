@@ -14,6 +14,19 @@
     --ok: #2fc08b;
     --warn: #f2a33c;
     --radius: 10px;
+    --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+/* 카드처럼 생긴 클릭 대상들이 공유하는 바탕. 각자는 여백과 강조선만 따로 준다. */
+.tile {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg-input);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
 }
 
 * {
@@ -403,7 +416,7 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 .room-id { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
 
 .room-code {
-    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-family: var(--mono);
     font-size: 1.3rem;
     font-weight: 700;
     letter-spacing: .15em;
@@ -433,18 +446,10 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 }
 
 .team-choice {
-    display: flex;
-    flex-direction: column;
     gap: .15rem;
     padding: .8rem;
-    border: 1px solid var(--line);
     border-left: 3px solid var(--team-color);
-    border-radius: 8px;
-    background: var(--bg-input);
-    color: var(--text);
     cursor: pointer;
-    text-align: left;
-    font: inherit;
 }
 
 .team-choice:hover { border-color: var(--team-color); background: #182131; }
@@ -466,16 +471,9 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 .mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 
 .mode-btn {
-    display: flex;
-    flex-direction: column;
     gap: .1rem;
     padding: .6rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--bg-input);
-    color: var(--text);
     cursor: pointer;
-    font: inherit;
 }
 
 .mode-btn small { color: var(--text-dim); font-size: .75rem; }
@@ -662,7 +660,7 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 .turn-clock { min-width: 110px; text-align: center; }
 
 .clock {
-    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-family: var(--mono);
     font-size: 2rem;
     font-weight: 700;
     line-height: 1;
@@ -726,17 +724,9 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 }
 
 .player-card {
-    display: flex;
-    flex-direction: column;
     gap: .25rem;
     align-items: flex-start;
     padding: .5rem .6rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--bg-input);
-    color: var(--text);
-    font: inherit;
-    text-align: left;
     cursor: default;
 }
 
@@ -796,7 +786,7 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 .roster-slot.empty { background: transparent; border: 1px dashed var(--line-soft); }
 
 .slot-pick {
-    font-family: ui-monospace, Consolas, monospace;
+    font-family: var(--mono);
     font-size: .7rem;
     color: var(--text-dim);
     flex: none;
@@ -854,8 +844,6 @@ select.input option { background: var(--bg-raised); color: var(--text); }
     align-items: start;
 }
 
-.roster-card { border-top: 3px solid var(--team-color); }
-
 .pick-log {
     list-style: none;
     margin: 0;
@@ -898,14 +886,6 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 
 #blazor-error-ui a { color: #ffd9a8; text-decoration: underline; cursor: pointer; }
 #blazor-error-ui .dismiss { float: right; }
-
-.blazor-error-boundary {
-    background: #2a1b12;
-    border: 1px solid #5a3b22;
-    border-radius: var(--radius);
-    padding: 1rem;
-    color: #ffd9a8;
-}
 
 /* ── 좁은 화면 ────────────────────────────────────────────────────────── */
 
