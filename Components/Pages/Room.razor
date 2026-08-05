@@ -27,6 +27,7 @@ else
         </div>
 
         <div class="room-actions">
+            <span class="viewers" title="이 방을 보고 있는 화면 수">👀 @_room.ViewerCount</span>
             <span class="role-badge">@RoleLabel</span>
             @if (!_isHost)
             {
@@ -102,6 +103,12 @@ else
     private Guid? _myTeamId;
     private bool _spectator;
 
+    // 접속 집계용. 프리렌더에서 중복으로 세지 않도록 회선이 붙은 뒤에만 자리를 잡는다.
+    private bool _interactive;
+    private bool _seated;
+    private DraftRoom? _seatedRoom;
+    private Guid? _seatedTeam;
+
     private string RoleLabel => _isHost
         ? "진행자"
         : _myTeamId is { } id && _room?.Teams.FirstOrDefault(t => t.Id == id) is { } team
@@ -143,6 +150,33 @@ else
         _myTeamId = Guid.TryParse(MeTeam, out var parsed) && _room?.Teams.Any(t => t.Id == parsed) == true
             ? parsed
             : null;
+
+        SyncSeat();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // 프리렌더 단계에서는 세지 않는다. 실제 회선이 붙은 뒤부터가 진짜 접속이다.
+        if (!firstRender) return;
+
+        _interactive = true;
+        SyncSeat();
+    }
+
+    /// <summary>이 화면이 앉아 있는 자리를 현재 역할에 맞춘다. 역할이 바뀌면 이전 자리에서 일어난다.</summary>
+    private void SyncSeat()
+    {
+        if (!_interactive) return;
+
+        var wanted = _myTeamId;
+        if (_seated && _seatedRoom == _room && _seatedTeam == wanted) return;
+
+        if (_seated) _seatedRoom?.LeaveSeat(_seatedTeam);
+
+        _seatedRoom = _room;
+        _seatedTeam = wanted;
+        _seated = _room is not null;
+        _room?.TakeSeat(wanted);
     }
 
     private void OnRoomChanged() => InvokeAsync(StateHasChanged);
@@ -158,5 +192,6 @@ else
     public void Dispose()
     {
         if (_subscribed is not null) _subscribed.Changed -= OnRoomChanged;
+        if (_seated) _seatedRoom?.LeaveSeat(_seatedTeam);
     }
 }

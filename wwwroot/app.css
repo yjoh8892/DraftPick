@@ -161,6 +161,38 @@ code {
 
 .error-text { color: var(--danger); font-size: .88rem; }
 .ok-text { color: var(--ok); font-size: .88rem; }
+.warn-text { color: var(--warn); font-size: .88rem; }
+
+/* 팀장이 자리에 들어와 있는지 알려주는 표시등. */
+.seat-light {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+    background: #39434f;
+    border: 1px solid #4a5665;
+}
+
+.seat-light.on {
+    background: var(--ok);
+    border-color: var(--ok);
+    box-shadow: 0 0 6px rgba(47, 192, 139, .75);
+}
+
+.seat-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    font-size: .88rem;
+    margin-bottom: .5rem;
+}
+
+.viewers {
+    font-size: .8rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
 
 .btn {
     display: inline-flex;
@@ -494,7 +526,7 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 
 .team-row {
     display: grid;
-    grid-template-columns: 28px 1fr 1fr 92px auto;
+    grid-template-columns: 28px 10px 1fr 1fr 92px auto;
     gap: .4rem;
     align-items: center;
     padding-left: .35rem;
@@ -898,7 +930,7 @@ select.input option { background: var(--bg-raised); color: var(--text); }
     .quick-add { grid-template-columns: 1fr 1fr; }
     .player-row { grid-template-columns: 1fr 90px auto; }
     .player-row select:last-of-type { display: none; }
-    .team-row { grid-template-columns: 24px 1fr auto; }
+    .team-row { grid-template-columns: 24px 10px 1fr auto; }
     .team-row .color-select { display: none; }
     .turn-bar { gap: .75rem; }
     .clock { font-size: 1.6rem; }

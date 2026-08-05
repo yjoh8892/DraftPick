@@ -1,0 +1,7 @@
+@* 팀장이 그 자리에 들어와 있는지 보여주는 표시등. *@
+
+<span class="seat-light @(Connected ? "on" : "")" title="@(Connected ? "접속 중" : "아직 안 들어옴")"></span>
+
+@code {
+    [Parameter] public bool Connected { get; set; }
+}

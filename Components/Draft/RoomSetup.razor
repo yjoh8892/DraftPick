@@ -55,7 +55,10 @@
         <section class="card">
             <div class="card-head">
                 <h2>팀 <span class="count">@Room.Teams.Count</span></h2>
-                <button class="btn btn-sm" @onclick="() => Room.AddTeam()">+ 팀 추가</button>
+                <div class="row-actions">
+                    <button class="btn btn-sm" @onclick="Room.ShuffleTeams" disabled="@(Room.Teams.Count < 2)">순서 섞기</button>
+                    <button class="btn btn-sm" @onclick="() => Room.AddTeam()">+ 팀 추가</button>
+                </div>
             </div>
 
             @if (Room.Teams.Count == 0)
@@ -69,6 +72,7 @@
                     var team = Room.Teams[index];
                     <div class="team-row" style="--team-color:@team.Color" @key="team.Id">
                         <span class="pick-order" title="@(index + 1)번 지명권">@(index + 1)</span>
+                        <SeatLight Connected="Room.IsTeamConnected(team.Id)" />
 
                         <input class="input" placeholder="팀 이름"
                                @bind="team.Name" @bind:after="Notify" maxlength="20" />
@@ -149,6 +153,14 @@
                 <p class="ok-text">@_importMessage</p>
             }
 
+            @{
+                var duplicates = Room.DuplicatePlayerNames();
+            }
+            @if (duplicates.Count > 0)
+            {
+                <p class="warn-text">이름이 겹치는 선수가 있습니다 — @string.Join(", ", duplicates)</p>
+            }
+
             <div class="player-editor">
                 @foreach (var player in Room.Players)
                 {
@@ -198,13 +210,22 @@
                 </div>
             </div>
 
+            <p class="seat-summary">
+                <SeatLight Connected="Room.ConnectedTeamCount > 0" />
+                팀장 접속 <b>@Room.ConnectedTeamCount</b> / @Room.Teams.Count
+                @if (Room.Teams.Count > 0 && Room.ConnectedTeamCount < Room.Teams.Count)
+                {
+                    <span class="muted">— 방 코드 <b>@Room.Code</b> 를 알려주세요</span>
+                }
+            </p>
+
             @if (problem is not null)
             {
                 <p class="error-text">@problem</p>
             }
             else
             {
-                <p class="ok-text">준비 완료. 팀장들이 방 코드로 입장했는지 확인하고 시작하세요.</p>
+                <p class="ok-text">준비 완료. 시작하면 대기 중인 팀장 화면이 바로 드래프트 보드로 바뀝니다.</p>
             }
 
             <button class="btn btn-primary btn-lg" @onclick="Start" disabled="@(problem is not null)">

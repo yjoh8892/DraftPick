@@ -39,6 +39,7 @@
                     @foreach (var team in Room.Teams)
                     {
                         <li class="team-list-item @(team.Id == MyTeamId ? "mine" : "")" style="--team-color:@team.Color">
+                            <SeatLight Connected="Room.IsTeamConnected(team.Id)" />
                             <span class="team-dot"></span>
                             <span class="team-name">@team.Name</span>
                             <span class="team-captain">@team.Captain</span>

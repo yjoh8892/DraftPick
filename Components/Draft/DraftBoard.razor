@@ -1,3 +1,6 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
 @* 진행 중 화면. 서버가 1초마다 방을 두드리므로 타이머와 지명 결과가 모두에게 동시에 반영된다. *@
 
 @{
@@ -108,6 +111,7 @@
                 <div class="roster @(team.Id == onClock?.Id ? "on-clock" : "") @(team.Id == MyTeamId ? "mine" : "")"
                      style="--team-color:@team.Color" @key="team.Id">
                     <div class="roster-head">
+                        <SeatLight Connected="Room.IsTeamConnected(team.Id)" />
                         <span class="team-dot"></span>
                         <span class="team-name">@team.Name</span>
                         <span class="roster-count">@roster.Count / @Room.Rounds</span>
@@ -178,4 +182,40 @@
     private void Pick(Guid playerId) => _error = Room.Pick(playerId, MyTeamId ?? Guid.Empty, HostKey);
 
     private void Undo() => _error = Room.UndoLastPick();
+
+    // ── 내 차례 알림 ─────────────────────────────────────────────────────
+    // 디스코드를 보다가 탭을 놓치면 자동 지명으로 넘어가 버린다. 차례가 시작될 때 한 번만 알린다.
+
+    private bool _alerting;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var shouldAlert = IsMyTurn && Room.Status == RoomStatus.Running;
+        if (shouldAlert == _alerting) return;
+
+        _alerting = shouldAlert;
+        await CallAlert(shouldAlert ? "alertTurn" : "clearAlert");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // 드래프트가 끝나 이 화면이 사라질 때 제목이 계속 깜빡이지 않도록 정리한다.
+        if (_alerting) await CallAlert("clearAlert");
+    }
+
+    private async Task CallAlert(string method)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync($"draftPick.{method}", "🔔 내 차례!");
+        }
+        catch (JSException)
+        {
+            // 스크립트가 아직 없거나 브라우저가 막은 경우. 알림이 없을 뿐 진행에는 지장이 없다.
+        }
+        catch (JSDisconnectedException)
+        {
+            // 회선이 이미 끊긴 뒤의 정리 호출.
+        }
+    }
 }

@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+
 namespace DraftPick.Models;
 
 /// <summary>지명 순서 방식.</summary>
@@ -94,6 +97,11 @@ public sealed class DraftRoom
 
     private TimeSpan? _pausedRemaining;
 
+    // 지금 이 방을 보고 있는 화면들. 팀 자리에 앉은 사람과 그 외(진행자·관전자)를 따로 센다.
+    // 여러 회선이 동시에 드나들므로 _gate가 아니라 스레드 안전한 자료구조를 쓴다.
+    private readonly ConcurrentDictionary<Guid, int> _seatedByTeam = new();
+    private int _otherViewers;
+
     /// <summary>상태가 바뀔 때마다 발생. 백그라운드 스레드에서도 호출되므로 UI는 InvokeAsync로 받아야 한다.</summary>
     public event Action? Changed;
 
@@ -154,6 +162,39 @@ public sealed class DraftRoom
     }
 
     public bool CanPick(Guid actingTeamId, string? hostKey) => WhyCannotPick(actingTeamId, hostKey) is null;
+
+    // ── 접속 현황 ────────────────────────────────────────────────────────────
+
+    /// <summary>화면 하나가 자리에 앉는다. teamId가 null이면 진행자나 관전자.</summary>
+    public void TakeSeat(Guid? teamId)
+    {
+        if (teamId is { } id) _seatedByTeam.AddOrUpdate(id, 1, (_, n) => n + 1);
+        else Interlocked.Increment(ref _otherViewers);
+
+        Touch();
+    }
+
+    public void LeaveSeat(Guid? teamId)
+    {
+        if (teamId is { } id)
+        {
+            // 같은 팀으로 두 명이 들어와 있을 수 있으므로 세어서 뺀다.
+            if (_seatedByTeam.AddOrUpdate(id, 0, (_, n) => n - 1) <= 0) _seatedByTeam.TryRemove(id, out _);
+        }
+        else
+        {
+            Interlocked.Decrement(ref _otherViewers);
+        }
+        Touch();
+    }
+
+    public bool IsTeamConnected(Guid teamId) => _seatedByTeam.TryGetValue(teamId, out var n) && n > 0;
+
+    /// <summary>자리를 잡은 팀 수. 진행자가 시작 전에 확인하는 값이다.</summary>
+    public int ConnectedTeamCount => _teams.Count(t => IsTeamConnected(t.Id));
+
+    /// <summary>이 방을 보고 있는 화면 수.</summary>
+    public int ViewerCount => _seatedByTeam.Values.Sum() + Volatile.Read(ref _otherViewers);
 
     /// <summary>남은 초. 무제한이면 null, 이미 지났으면 0.</summary>
     public int? SecondsLeft
@@ -232,6 +273,30 @@ public sealed class DraftRoom
         }
         Touch();
     }
+
+    /// <summary>지명 순서를 무작위로 다시 뽑는다. 색은 팀에 붙어 있으므로 순서만 섞인다.</summary>
+    public void ShuffleTeams()
+    {
+        lock (_gate)
+        {
+            if (Status != RoomStatus.Setup) return;
+
+            for (var i = _teams.Count - 1; i > 0; i--)
+            {
+                var j = RandomNumberGenerator.GetInt32(i + 1);
+                (_teams[i], _teams[j]) = (_teams[j], _teams[i]);
+            }
+        }
+        Touch();
+    }
+
+    /// <summary>두 번 이상 등록된 이름. 시작을 막지는 않고 진행자에게 알려만 준다.</summary>
+    public IReadOnlyList<string> DuplicatePlayerNames() =>
+        _players
+            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
 
     public Player? AddPlayer(string name, string position = Positions.Unset, string tier = "")
     {
