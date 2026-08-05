@@ -6,4 +6,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!--
+    테스트 프로젝트가 이 프로젝트 폴더 안에 들어 있어서, 그대로 두면 웹 SDK의 기본 글롭이
+    테스트 파일까지 끌어간다. 테스트는 자기 프로젝트에서만 컴파일되도록 여기서 제외한다.
+  -->
+  <ItemGroup>
+    <Compile Remove="DraftPick.Tests\**" />
+    <Content Remove="DraftPick.Tests\**" />
+    <None Remove="DraftPick.Tests\**" />
+    <EmbeddedResource Remove="DraftPick.Tests\**" />
+  </ItemGroup>
+
 </Project>
