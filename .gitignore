@@ -29,6 +29,9 @@ appsettings.Local.json
 appsettings.*.Local.json
 secrets.json
 
+## Claude Code 개인 설정 (권한 허용 목록 등)
+.claude/settings.local.json
+
 ## OS
 .DS_Store
 Thumbs.db

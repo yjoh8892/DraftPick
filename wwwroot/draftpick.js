@@ -52,6 +52,10 @@ window.draftPick = (() => {
         titleBeforeFlash = null;
     }
 
+    // 진행자 권한은 URL의 키 하나뿐이라, 탭을 닫으면 방을 조작할 사람이 사라진다.
+    // 그 사고를 막으려고 브라우저에 방별로 키를 남겨둔다.
+    const hostKeyName = (code) => 'draftpick.host.' + code;
+
     return {
         alertTurn(message) {
             beep();
@@ -59,6 +63,27 @@ window.draftPick = (() => {
         },
         clearAlert() {
             stopFlash();
+        },
+        rememberHost(code, key) {
+            try {
+                localStorage.setItem(hostKeyName(code), key);
+            } catch {
+                // 시크릿 모드나 저장 공간 차단. 링크를 직접 보관하는 수밖에 없다.
+            }
+        },
+        recallHost(code) {
+            try {
+                return localStorage.getItem(hostKeyName(code));
+            } catch {
+                return null;
+            }
+        },
+        forgetHost(code) {
+            try {
+                localStorage.removeItem(hostKeyName(code));
+            } catch {
+                // 지울 수 없어도 키가 틀리면 어차피 진행자로 인정되지 않는다.
+            }
         },
     };
 })();

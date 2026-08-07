@@ -29,7 +29,11 @@ else
         <div class="room-actions">
             <span class="viewers" title="이 방을 보고 있는 화면 수">👀 @_room.ViewerCount</span>
             <span class="role-badge">@RoleLabel</span>
-            @if (!_isHost)
+            @if (_isHost)
+            {
+                <CopyButton Text="HostLink" Label="진행자 링크 복사" Class="btn-ghost btn-sm" />
+            }
+            else
             {
                 <button class="btn btn-ghost btn-sm" @onclick="ClearRole">역할 변경</button>
             }
@@ -37,10 +41,43 @@ else
         </div>
     </div>
 
+    @if (_isHost && _room.Status == RoomStatus.Setup && !_guardDismissed)
+    {
+        <div class="card host-guard">
+            <div>
+                <h3>진행자 링크를 지금 보관해두세요</h3>
+                <p class="muted">
+                    이 링크(또는 아래 키)가 진행자 권한의 전부입니다. 잃어버리면 이 방을 조작할 사람이
+                    없어져 처음부터 다시 만들어야 합니다. 디스코드에 자신에게 보내두는 것을 권합니다.
+                </p>
+                <p class="hint">
+                    이 브라우저에는 자동으로 저장해뒀습니다. 실수로 탭을 닫아도 같은 브라우저로 방에
+                    다시 들어오면 진행자로 돌아올 수 있습니다.
+                </p>
+            </div>
+            <div class="host-guard-key">
+                <span class="key-label">진행자 키</span>
+                <code class="host-key">@_room.HostKey</code>
+                <div class="row-actions">
+                    <CopyButton Text="HostLink" Label="링크 복사" Class="btn-primary btn-sm" />
+                    <button class="btn btn-ghost btn-sm" @onclick="() => _guardDismissed = true">보관했습니다</button>
+                </div>
+            </div>
+        </div>
+    }
+
     @if (!_isHost && _myTeamId is null && !_spectator)
     {
         <div class="card role-picker">
             <h2>어느 자리로 들어오시나요?</h2>
+
+            @if (_savedHostKey is not null)
+            {
+                <div class="host-return">
+                    <span>이 브라우저에 진행자 권한이 저장되어 있습니다.</span>
+                    <button class="btn btn-primary btn-sm" @onclick="() => EnterAsHost(_savedHostKey)">진행자로 입장</button>
+                </div>
+            }
 
             @if (_room.Teams.Count == 0)
             {
@@ -63,7 +100,24 @@ else
                 </div>
             }
 
-            <button class="btn btn-ghost" @onclick="ChooseSpectator">관전자로 보기</button>
+            <div class="row-actions role-picker-actions">
+                <button class="btn btn-ghost" @onclick="ChooseSpectator">관전자로 보기</button>
+                <button class="btn btn-ghost" @onclick="() => _askingHostKey = !_askingHostKey">진행자 키로 입장</button>
+            </div>
+
+            @if (_askingHostKey)
+            {
+                <div class="key-entry">
+                    <input class="input" placeholder="진행자 키" autocomplete="off"
+                           @bind="_typedHostKey" @bind:event="oninput" @onkeydown="OnHostKeyDown" />
+                    <button class="btn btn-primary" @onclick="() => EnterAsHost(_typedHostKey)"
+                            disabled="@(_typedHostKey.Trim().Length == 0)">입장</button>
+                </div>
+                @if (_hostKeyError is not null)
+                {
+                    <p class="error-text">@_hostKeyError</p>
+                }
+            }
         </div>
     }
     else
@@ -108,6 +162,13 @@ else
     private bool _seated;
     private DraftRoom? _seatedRoom;
     private Guid? _seatedTeam;
+
+    // 진행자 권한 복구용.
+    private string? _savedHostKey;
+    private bool _guardDismissed;
+    private bool _askingHostKey;
+    private string _typedHostKey = "";
+    private string? _hostKeyError;
 
     private string RoleLabel => _isHost
         ? "진행자"
@@ -154,13 +215,37 @@ else
         SyncSeat();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // 프리렌더 단계에서는 세지 않는다. 실제 회선이 붙은 뒤부터가 진짜 접속이다.
         if (!firstRender) return;
 
         _interactive = true;
         SyncSeat();
+
+        if (_room is null) return;
+
+        if (_isHost)
+        {
+            // 탭을 닫아도 돌아올 수 있게 이 브라우저에 남겨둔다.
+            await Js("rememberHost", Code, _room.HostKey);
+            return;
+        }
+
+        // 링크 없이 들어왔다면 예전에 저장해둔 키가 있는지 본다. 자동으로 진행자로
+        // 바꾸지는 않는다 — 같은 브라우저를 팀장이 쓸 수도 있으므로 선택지로만 보여준다.
+        var saved = await Js<string?>("recallHost", Code);
+        if (string.IsNullOrEmpty(saved)) return;
+
+        if (_room.IsHost(saved))
+        {
+            _savedHostKey = saved;
+            StateHasChanged();
+        }
+        else
+        {
+            await Js("forgetHost", Code);
+        }
     }
 
     /// <summary>이 화면이 앉아 있는 자리를 현재 역할에 맞춘다. 역할이 바뀌면 이전 자리에서 일어난다.</summary>
@@ -187,7 +272,41 @@ else
 
     private void ClearRole() => Nav.NavigateTo($"/room/{Code}", replace: true);
 
-    private string JoinLink() => new Uri(new Uri(Nav.BaseUri), $"room/{Code}").ToString();
+    private void OnHostKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") EnterAsHost(_typedHostKey);
+    }
+
+    private void EnterAsHost(string? key)
+    {
+        var trimmed = key?.Trim();
+        if (_room?.IsHost(trimmed) != true)
+        {
+            _hostKeyError = "진행자 키가 맞지 않습니다.";
+            return;
+        }
+        Nav.NavigateTo($"/room/{Code}?host={trimmed}", replace: true);
+    }
+
+    private string JoinLink() => Link($"room/{Code}");
+
+    private string HostLink() => Link($"room/{Code}?host={_room?.HostKey}");
+
+    private string Link(string relative) => new Uri(new Uri(Nav.BaseUri), relative).ToString();
+
+    private async Task Js(string method, params object?[] args)
+    {
+        try { await JS.InvokeVoidAsync($"draftPick.{method}", args); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task<T?> Js<T>(string method, params object?[] args)
+    {
+        try { return await JS.InvokeAsync<T?>($"draftPick.{method}", args); }
+        catch (JSException) { return default; }
+        catch (JSDisconnectedException) { return default; }
+    }
 
     public void Dispose()
     {

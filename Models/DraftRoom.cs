@@ -31,6 +31,26 @@ public enum RoomStatus
     Finished,
 }
 
+public enum DraftEventKind
+{
+    Pick,
+    AutoPick,
+    Skip,
+    Undo,
+}
+
+/// <summary>
+/// 방금 일어난 일. 지명이 되면 화면이 조용히 바뀌기만 해서 딴 데 보고 있으면 놓치기 쉬운데,
+/// 특히 관전자는 흐름을 따라갈 단서가 없다. 그래서 마지막 사건을 방이 들고 있다가 잠깐 띄워준다.
+/// 이름과 색을 값으로 복사해 두는 이유는 되돌린 뒤에도 "무엇이 취소됐는지" 보여줘야 하기 때문이다.
+/// </summary>
+public sealed record DraftEvent(
+    DraftEventKind Kind,
+    int PickNumber,
+    string TeamName,
+    string TeamColor,
+    string PlayerName = "");
+
 /// <summary>
 /// 드래프트 한 판의 모든 상태. 서버 메모리에만 존재하며 이 객체가 유일한 진실 원본이다.
 /// 상태를 바꾸는 모든 경로는 <see cref="_gate"/> 안에서 처리하고, 끝난 뒤 <see cref="Changed"/>로 알린다.
@@ -46,7 +66,7 @@ public sealed class DraftRoom
     /// <summary>진행자만 아는 키. 쿼리스트링으로 들고 다닌다.</summary>
     public required string HostKey { get; init; }
 
-    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+    /// <summary>방치된 방을 정리하는 기준. <see cref="Touch"/>가 갱신한다.</summary>
     public DateTimeOffset LastActivityAt { get; private set; } = DateTimeOffset.UtcNow;
 
     public const int MinRounds = 1;
@@ -94,6 +114,9 @@ public sealed class DraftRoom
 
     /// <summary>현재 턴 마감 시각. 무제한이거나 일시정지면 null.</summary>
     public DateTimeOffset? TurnEndsAt { get; private set; }
+
+    /// <summary>마지막으로 일어난 일. 화면이 이걸 잠깐 띄워 흐름을 알린다.</summary>
+    public DraftEvent? LastEvent { get; private set; }
 
     private TimeSpan? _pausedRemaining;
 
@@ -442,6 +465,7 @@ public sealed class DraftRoom
             if (Status != RoomStatus.Setup) return "이미 시작된 드래프트입니다.";
             Status = RoomStatus.Running;
             PickIndex = 0;
+            LastEvent = null;
             ResetTurnClockNoLock();
         }
         Touch();
@@ -478,6 +502,12 @@ public sealed class DraftRoom
             var last = _players.FirstOrDefault(p => p.PickNumber == PickIndex);
             if (last is null) return "마지막 픽을 찾을 수 없습니다.";
 
+            // 팀 정보는 Release()로 지워지기 전에 챙겨둔다.
+            var owner = _teams.FirstOrDefault(t => t.Id == last.DraftedBy);
+            LastEvent = new DraftEvent(
+                DraftEventKind.Undo, PickIndex,
+                owner?.Name ?? "", owner?.Color ?? TeamColors.Neutral, last.Name);
+
             last.Release();
             PickIndex--;
 
@@ -495,6 +525,11 @@ public sealed class DraftRoom
         lock (_gate)
         {
             if (Status != RoomStatus.Running) return;
+
+            if (TeamAtPick(PickIndex) is { } skipped)
+            {
+                LastEvent = new DraftEvent(DraftEventKind.Skip, PickIndex + 1, skipped.Name, skipped.Color);
+            }
             AdvanceNoLock();
         }
         Touch();
@@ -538,6 +573,7 @@ public sealed class DraftRoom
             PickIndex = 0;
             TurnEndsAt = null;
             _pausedRemaining = null;
+            LastEvent = null;
             foreach (var p in _players) p.Release();
         }
         Touch();
@@ -558,7 +594,7 @@ public sealed class DraftRoom
                 {
                     var current = TeamAtPick(PickIndex);
                     var best = _players.FirstOrDefault(p => !p.IsDrafted);
-                    if (current is not null && best is not null) CommitPickNoLock(best, current);
+                    if (current is not null && best is not null) CommitPickNoLock(best, current, byTimeout: true);
                     else AdvanceNoLock();
                 }
                 else
@@ -576,9 +612,13 @@ public sealed class DraftRoom
 
     // ── 내부 ─────────────────────────────────────────────────────────────────
 
-    private void CommitPickNoLock(Player player, Team team)
+    private void CommitPickNoLock(Player player, Team team, bool byTimeout = false)
     {
         player.AssignTo(team.Id, PickIndex + 1);
+        LastEvent = new DraftEvent(
+            byTimeout ? DraftEventKind.AutoPick : DraftEventKind.Pick,
+            PickIndex + 1, team.Name, team.Color, player.Name);
+
         AdvanceNoLock();
     }
 

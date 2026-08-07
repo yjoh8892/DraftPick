@@ -12,6 +12,22 @@
 }
 
 <div class="board">
+    @if (Room.LastEvent is { } happened)
+    {
+        @* @key가 사건마다 달라져서 요소가 새로 만들어지고, 그때마다 CSS 애니메이션이 처음부터 돈다. *@
+        <div class="pick-toast @ToastClass(happened.Kind)" style="--team-color:@happened.TeamColor" @key="happened">
+            <span class="toast-pick">#@happened.PickNumber</span>
+            <span class="team-dot"></span>
+            <span class="toast-team">@happened.TeamName</span>
+            @if (happened.PlayerName.Length > 0)
+            {
+                <span class="toast-arrow">@(happened.Kind == DraftEventKind.Undo ? "✕" : "→")</span>
+                <span class="toast-player">@happened.PlayerName</span>
+            }
+            <span class="toast-kind">@ToastLabel(happened.Kind)</span>
+        </div>
+    }
+
     <section class="turn-bar @(IsMyTurn ? "my-turn" : "")" style="--team-color:@(onClock?.Color ?? TeamColors.Neutral)">
         <div class="turn-meta">
             <span class="turn-round">R@(Room.CurrentRound) / @Room.Rounds</span>
@@ -178,6 +194,23 @@
             .Where(p => _position is null || p.Position == _position)
             .Where(p => _search.Length == 0 || p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+    private static string ToastLabel(DraftEventKind kind) => kind switch
+    {
+        DraftEventKind.Pick => "지명",
+        DraftEventKind.AutoPick => "시간 초과 · 자동 지명",
+        DraftEventKind.Skip => "턴 넘김",
+        DraftEventKind.Undo => "지명 취소",
+        _ => "",
+    };
+
+    private static string ToastClass(DraftEventKind kind) => kind switch
+    {
+        DraftEventKind.AutoPick => "auto",
+        DraftEventKind.Skip => "skip",
+        DraftEventKind.Undo => "undo",
+        _ => "",
+    };
 
     private void Pick(Guid playerId) => _error = Room.Pick(playerId, MyTeamId ?? Guid.Empty, HostKey);
 
