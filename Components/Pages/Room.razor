@@ -38,8 +38,33 @@ else
                 <button class="btn btn-ghost btn-sm" @onclick="ClearRole">역할 변경</button>
             }
             <CopyButton Text="JoinLink" Label="참가 링크 복사" Class="btn-ghost btn-sm" />
+            <button class="btn btn-ghost btn-sm" @onclick="() => _chatOpen = !_chatOpen">
+                💬 채팅 @(_room.Chat.Count > 0 ? _room.Chat.Count.ToString() : "")
+            </button>
         </div>
     </div>
+
+    @if (_chatOpen)
+    {
+        <ChatPanel Room="_room" Name="_name" MyTeamId="_myTeamId" HostKey="HostKey"
+                   OnClose="() => _chatOpen = false"
+                   NameChangeRequested="OpenNameEditor" />
+    }
+
+    @if (_editingName)
+    {
+        <div class="card center-card name-dialog">
+            <h3>닉네임</h3>
+            <p class="muted">채팅에 표시될 이름입니다. 이 브라우저에 기억해둡니다.</p>
+            <div class="key-entry">
+                <input class="input" placeholder="닉네임" maxlength="@DraftRoom.MaxNameLength" autocomplete="off"
+                       @bind="_typedName" @bind:event="oninput" @onkeydown="OnNameKeyDown" />
+                <button class="btn btn-primary" @onclick="SaveName"
+                        disabled="@(_typedName.Trim().Length == 0)">확인</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" @onclick="() => _editingName = false">취소</button>
+        </div>
+    }
 
     @if (_isHost && _room.Status == RoomStatus.Setup && !_guardDismissed)
     {
@@ -99,6 +124,12 @@ else
                     }
                 </div>
             }
+
+            <label class="field nickname-field">
+                <span>닉네임 (채팅에 표시됩니다)</span>
+                <input class="input" placeholder="예: 길동" maxlength="@DraftRoom.MaxNameLength" autocomplete="off"
+                       @bind="_name" @bind:event="oninput" @bind:after="RememberName" />
+            </label>
 
             <div class="row-actions role-picker-actions">
                 <button class="btn btn-ghost" @onclick="ChooseSpectator">관전자로 보기</button>
@@ -170,6 +201,12 @@ else
     private string _typedHostKey = "";
     private string? _hostKeyError;
 
+    // 채팅용. 닉네임은 방마다 다시 정하기 번거로우니 브라우저에 기억해둔다.
+    private bool _chatOpen;
+    private string _name = "";
+    private bool _editingName;
+    private string _typedName = "";
+
     private string RoleLabel => _isHost
         ? "진행자"
         : _myTeamId is { } id && _room?.Teams.FirstOrDefault(t => t.Id == id) is { } team
@@ -223,6 +260,12 @@ else
         _interactive = true;
         SyncSeat();
 
+        if (await Js<string?>("recallName") is { Length: > 0 } remembered)
+        {
+            _name = remembered;
+            StateHasChanged();
+        }
+
         if (_room is null) return;
 
         if (_isHost)
@@ -266,7 +309,44 @@ else
 
     private void OnRoomChanged() => InvokeAsync(StateHasChanged);
 
-    private void ChooseTeam(Guid teamId) => Nav.NavigateTo($"/room/{Code}?me={teamId}", replace: true);
+    private void ChooseTeam(Guid teamId)
+    {
+        // 닉네임을 안 적었으면 팀장 이름을 빌려 쓴다.
+        if (_name.Length == 0 && _room?.Teams.FirstOrDefault(t => t.Id == teamId)?.Captain is { Length: > 0 } captain)
+        {
+            _name = captain;
+            _ = RememberName();
+        }
+        Nav.NavigateTo($"/room/{Code}?me={teamId}", replace: true);
+    }
+
+    private async Task RememberName()
+    {
+        var trimmed = _name.Trim();
+        if (trimmed.Length > 0) await Js("rememberName", trimmed);
+    }
+
+    private void OpenNameEditor()
+    {
+        _typedName = _name;
+        _editingName = true;
+    }
+
+    private void OnNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") _ = SaveName();
+    }
+
+    private async Task SaveName()
+    {
+        var trimmed = _typedName.Trim();
+        if (trimmed.Length == 0) return;
+
+        _name = trimmed;
+        _editingName = false;
+        _typedName = "";
+        await RememberName();
+    }
 
     private void ChooseSpectator() => Nav.NavigateTo($"/room/{Code}?role=spec", replace: true);
 

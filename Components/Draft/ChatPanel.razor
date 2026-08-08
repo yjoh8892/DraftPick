@@ -1,0 +1,78 @@
+@* 방 전체가 함께 쓰는 채팅. 화면을 보면서 그 자리에서 반응할 수 있게 옆에 붙여둔다. *@
+
+<aside class="chat-panel">
+    <div class="chat-head">
+        <h3>채팅 <span class="count">@Room.Chat.Count</span></h3>
+        <button class="icon-btn" title="닫기" @onclick="OnClose">✕</button>
+    </div>
+
+    @* column-reverse라 최신 글이 아래에 붙고 스크롤도 저절로 바닥에 머문다. *@
+    <div class="chat-log">
+        @foreach (var line in Room.Chat.Reverse())
+        {
+            <div class="chat-line" style="--team-color:@line.Color" @key="line.Seq">
+                <span class="chat-who">
+                    <span class="team-dot"></span>
+                    <b>@line.Author</b>
+                    <span class="chat-label">@line.Label</span>
+                </span>
+                <span class="chat-text">@line.Text</span>
+            </div>
+        }
+        @if (Room.Chat.Count == 0)
+        {
+            <p class="muted chat-empty">아직 아무도 말이 없습니다.</p>
+        }
+    </div>
+
+    <div class="chat-compose">
+        @if (string.IsNullOrWhiteSpace(Name))
+        {
+            <div class="chat-me">
+                <span class="hint">채팅에 쓸 닉네임이 필요합니다.</span>
+                <button class="btn btn-primary btn-sm" @onclick="() => NameChangeRequested.InvokeAsync()">닉네임 정하기</button>
+            </div>
+        }
+        else
+        {
+            <div class="chat-me">
+                <span>@Name</span>
+                <button class="btn btn-ghost btn-sm" @onclick="() => NameChangeRequested.InvokeAsync()">이름 바꾸기</button>
+            </div>
+
+            <div class="chat-input">
+                <input class="input" placeholder="메시지" maxlength="@DraftRoom.MaxChatLength" autocomplete="off"
+                       @bind="_draft" @bind:event="oninput" @onkeydown="OnKeyDown" />
+                <button class="btn btn-primary" @onclick="Send" disabled="@(_draft.Trim().Length == 0)">보내기</button>
+            </div>
+        }
+
+        @if (_error is not null)
+        {
+            <p class="error-text">@_error</p>
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public required DraftRoom Room { get; set; }
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public Guid? MyTeamId { get; set; }
+    [Parameter] public string? HostKey { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback NameChangeRequested { get; set; }
+
+    private string _draft = "";
+    private string? _error;
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Send();
+    }
+
+    private void Send()
+    {
+        _error = Room.Say(Name, _draft, MyTeamId, HostKey);
+        if (_error is null) _draft = "";
+    }
+}

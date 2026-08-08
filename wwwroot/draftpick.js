@@ -85,5 +85,21 @@ window.draftPick = (() => {
                 // 지울 수 없어도 키가 틀리면 어차피 진행자로 인정되지 않는다.
             }
         },
+
+        // 닉네임은 방마다 다시 정하기 번거로우니 브라우저 단위로 기억한다.
+        rememberName(name) {
+            try {
+                localStorage.setItem('draftpick.name', name);
+            } catch {
+                // 못 저장하면 방마다 다시 입력하면 된다.
+            }
+        },
+        recallName() {
+            try {
+                return localStorage.getItem('draftpick.name');
+            } catch {
+                return null;
+            }
+        },
     };
 })();

@@ -531,6 +531,94 @@ select.input option { background: var(--bg-raised); color: var(--text); }
     margin: .75rem auto 0;
 }
 
+.nickname-field { max-width: 320px; margin: 0 auto 1rem; text-align: left; }
+
+.name-dialog {
+    position: fixed;
+    top: 30%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 120;
+    width: min(90vw, 420px);
+    margin: 0;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .6);
+}
+
+/* ── 채팅 ─────────────────────────────────────────────────────────────── */
+
+.chat-panel {
+    position: fixed;
+    top: 3.1rem;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    width: min(92vw, 340px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-raised);
+    border-left: 1px solid var(--line);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
+}
+
+.chat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .6rem .9rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.chat-head h3 { margin: 0; }
+
+.chat-log {
+    flex: 1;
+    display: flex;
+    flex-direction: column-reverse;   /* 최신 글이 아래에 붙고 스크롤이 바닥에 머문다 */
+    gap: .5rem;
+    padding: .75rem .9rem;
+    overflow-y: auto;
+}
+
+.chat-empty { margin: auto; text-align: center; }
+
+.chat-line { display: flex; flex-direction: column; gap: .1rem; }
+
+.chat-who {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .8rem;
+}
+
+.chat-label {
+    padding: 0 .35rem;
+    border-radius: 999px;
+    background: var(--bg-input);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-size: .68rem;
+    font-weight: 700;
+}
+
+.chat-text { font-size: .9rem; word-break: break-word; }
+
+.chat-compose {
+    padding: .7rem .9rem;
+    border-top: 1px solid var(--line);
+    background: var(--bg-input);
+}
+
+.chat-me {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .45rem;
+    font-size: .85rem;
+}
+
+.chat-input { display: flex; gap: .4rem; }
+
 .team-choice-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

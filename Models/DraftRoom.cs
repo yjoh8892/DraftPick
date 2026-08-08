@@ -52,6 +52,17 @@ public sealed record DraftEvent(
     string PlayerName = "");
 
 /// <summary>
+/// 방 안에서 오간 한 마디. <paramref name="Label"/>과 <paramref name="Color"/>는 서버가 붙인다 —
+/// 화면이 보내온 역할을 그대로 믿으면 아무나 진행자를 사칭할 수 있다.
+/// </summary>
+public sealed record ChatMessage(
+    long Seq,
+    string Author,
+    string Label,
+    string Color,
+    string Text);
+
+/// <summary>
 /// 드래프트 한 판의 모든 상태. 서버 메모리에만 존재하며 이 객체가 유일한 진실 원본이다.
 /// 상태를 바꾸는 모든 경로는 <see cref="_gate"/> 안에서 처리하고, 끝난 뒤 <see cref="Changed"/>로 알린다.
 /// </summary>
@@ -123,6 +134,43 @@ public sealed class DraftRoom
 
     /// <summary>마지막으로 일어난 일. 화면이 이걸 잠깐 띄워 흐름을 알린다.</summary>
     public DraftEvent? LastEvent { get; private set; }
+
+    public const int MaxChatLength = 300;
+    public const int MaxNameLength = 16;
+
+    /// <summary>오래된 것부터 버린다. 방과 함께 사라지고 어디에도 저장하지 않는다.</summary>
+    private const int MaxChatMessages = 200;
+
+    private readonly List<ChatMessage> _chat = [];
+    private long _chatSeq;
+
+    public IReadOnlyList<ChatMessage> Chat => _chat;
+
+    /// <summary>한 마디 남긴다. 문제가 없으면 null, 있으면 사유를 준다.</summary>
+    public string? Say(string? author, string? text, Guid? teamId, string? hostKey)
+    {
+        var name = author?.Trim();
+        if (string.IsNullOrEmpty(name)) return "이름을 먼저 정해주세요.";
+        if (name.Length > MaxNameLength) name = name[..MaxNameLength];
+
+        var body = text?.Trim();
+        if (string.IsNullOrEmpty(body)) return "보낼 내용이 없습니다.";
+        if (body.Length > MaxChatLength) body = body[..MaxChatLength];
+
+        lock (_gate)
+        {
+            var (label, color) = IsHost(hostKey)
+                ? ("진행자", TeamColors.Neutral)
+                : teamId is { } id && _teams.FirstOrDefault(t => t.Id == id) is { } team
+                    ? (team.Name, team.Color)
+                    : ("관전자", TeamColors.Neutral);
+
+            _chat.Add(new ChatMessage(++_chatSeq, name, label, color, body));
+            if (_chat.Count > MaxChatMessages) _chat.RemoveRange(0, _chat.Count - MaxChatMessages);
+        }
+        Touch();
+        return null;
+    }
 
     private bool _resultAnnounced;
 
