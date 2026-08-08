@@ -1,3 +1,5 @@
+@inject DiscordAnnouncer Announcer
+
 @* 드래프트 완료 화면. 디스코드에 그대로 붙여넣을 수 있게 텍스트로 뽑아준다. *@
 
 @{
@@ -16,14 +18,25 @@
             </p>
         </div>
         <div class="row-actions">
-            <CopyButton Text="BuildText" Label="결과 텍스트 복사" Class="btn-primary" />
+            <CopyButton Text="Room.BuildResultText" Label="결과 텍스트 복사" Class="btn-primary" />
             @if (IsHost)
             {
+                @if (DiscordAnnouncer.IsWebhookUrl(Room.WebhookUrl))
+                {
+                    <button class="btn" @onclick="PostToDiscord" disabled="@_posting">
+                        @(_posting ? "올리는 중…" : "디스코드에 다시 올리기")
+                    </button>
+                }
                 <button class="btn" @onclick="Room.ResetToSetup">설정으로 돌아가기</button>
                 <button class="btn btn-ghost" @onclick="Undo">마지막 픽 되돌리기</button>
             }
         </div>
     </div>
+
+    @if (_postMessage is not null)
+    {
+        <p class="@(_postFailed ? "error-text" : "ok-text")">@_postMessage</p>
+    }
 
     <div class="result-rosters">
         @foreach (var team in Room.Teams)
@@ -89,27 +102,20 @@
 
     private void Undo() => Room.UndoLastPick();
 
-    private string BuildText()
+    // 자동 게시가 실패했거나 결과를 고친 뒤 다시 올리고 싶을 때 쓴다.
+    private bool _posting;
+    private bool _postFailed;
+    private string? _postMessage;
+
+    private async Task PostToDiscord()
     {
-        var lines = new List<string>
-        {
-            $"[{Room.Title}] {Room.OrderMode.Label()} · {Room.Rounds}라운드",
-            "",
-        };
+        _posting = true;
+        _postMessage = null;
 
-        foreach (var team in Room.Teams)
-        {
-            var header = string.IsNullOrWhiteSpace(team.Captain) ? team.Name : $"{team.Name} ({team.Captain})";
-            lines.Add($"■ {header}");
+        var problem = await Announcer.PostAsync(Room.WebhookUrl, Room.BuildResultText());
 
-            foreach (var player in Room.RosterOf(team.Id))
-            {
-                var position = player.Position == Positions.Unset ? "" : $" [{player.Position}]";
-                lines.Add($"  {player.PickNumber}. {player.Name}{position}");
-            }
-            lines.Add("");
-        }
-
-        return string.Join("\n", lines).TrimEnd();
+        _posting = false;
+        _postFailed = problem is not null;
+        _postMessage = problem ?? "디스코드 채널에 올렸습니다.";
     }
 }

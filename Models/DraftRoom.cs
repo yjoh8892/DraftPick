@@ -104,6 +104,12 @@ public sealed class DraftRoom
     /// <summary>시간이 다 되면 남은 선수 중 맨 위를 자동 지명할지. false면 타이머만 멈추고 기다린다.</summary>
     public bool AutoPickOnTimeout { get; set; } = true;
 
+    /// <summary>
+    /// 드래프트가 끝나면 결과를 올릴 디스코드 웹훅 주소. 비어 있으면 올리지 않는다.
+    /// 서버 메모리에만 있고 방과 함께 사라진다.
+    /// </summary>
+    public string WebhookUrl { get; set; } = "";
+
     public IReadOnlyList<Team> Teams => _teams;
     public IReadOnlyList<Player> Players => _players;
 
@@ -117,6 +123,24 @@ public sealed class DraftRoom
 
     /// <summary>마지막으로 일어난 일. 화면이 이걸 잠깐 띄워 흐름을 알린다.</summary>
     public DraftEvent? LastEvent { get; private set; }
+
+    private bool _resultAnnounced;
+
+    /// <summary>
+    /// 결과를 아직 안 올렸으면 올릴 차례라고 알려주고, 곧바로 올린 것으로 표시한다.
+    /// 서버가 1초마다 방을 훑으므로, 이 한 번의 잠금이 같은 결과를 여러 번 올리는 걸 막는다.
+    /// 되돌려서 다시 끝나면 고쳐진 결과를 다시 올린다.
+    /// </summary>
+    public bool TryClaimResultAnnouncement()
+    {
+        lock (_gate)
+        {
+            if (Status != RoomStatus.Finished || _resultAnnounced || WebhookUrl.Length == 0) return false;
+
+            _resultAnnounced = true;
+            return true;
+        }
+    }
 
     private TimeSpan? _pausedRemaining;
 
@@ -185,6 +209,35 @@ public sealed class DraftRoom
     }
 
     public bool CanPick(Guid actingTeamId, string? hostKey) => WhyCannotPick(actingTeamId, hostKey) is null;
+
+    /// <summary>
+    /// 팀별 로스터를 사람이 읽는 글로 만든다. 복사 버튼과 디스코드 게시가 같은 문구를 쓰도록
+    /// 화면이 아니라 여기서 만든다.
+    /// </summary>
+    public string BuildResultText()
+    {
+        var lines = new List<string> { $"[{Title}] {OrderMode.Label()} · {Rounds}라운드", "" };
+
+        lock (_gate)
+        {
+            var rosters = RostersByTeam();
+
+            foreach (var team in _teams)
+            {
+                var header = string.IsNullOrWhiteSpace(team.Captain) ? team.Name : $"{team.Name} ({team.Captain})";
+                lines.Add($"■ {header}");
+
+                foreach (var player in rosters[team.Id])
+                {
+                    var position = player.Position == Positions.Unset ? "" : $" [{player.Position}]";
+                    lines.Add($"  {player.PickNumber}. {player.Name}{position}");
+                }
+                lines.Add("");
+            }
+        }
+
+        return string.Join("\n", lines).TrimEnd();
+    }
 
     // ── 접속 현황 ────────────────────────────────────────────────────────────
 
@@ -466,6 +519,7 @@ public sealed class DraftRoom
             Status = RoomStatus.Running;
             PickIndex = 0;
             LastEvent = null;
+            _resultAnnounced = false;
             ResetTurnClockNoLock();
         }
         Touch();
@@ -510,6 +564,7 @@ public sealed class DraftRoom
 
             last.Release();
             PickIndex--;
+            _resultAnnounced = false;   // 결과가 바뀌었으니 다시 끝나면 고쳐진 로스터를 올린다.
 
             if (Status == RoomStatus.Finished) Status = RoomStatus.Running;
             _pausedRemaining = null;

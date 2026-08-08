@@ -17,4 +17,9 @@
     <EmbeddedResource Remove="DraftPick.Tests\**" />
   </ItemGroup>
 
+  <!-- 메시지 분할처럼 밖으로 드러낼 필요는 없지만 조용히 틀리면 곤란한 것들을 테스트하기 위해. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="DraftPick.Tests" />
+  </ItemGroup>
+
 </Project>
