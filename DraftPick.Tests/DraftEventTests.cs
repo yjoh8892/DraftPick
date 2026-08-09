@@ -40,8 +40,9 @@ public class DraftEventTests
         Thread.Sleep(1200);
         room.Tick();
 
+        // 자동 지명은 목록 맨 위가 아니라 티어가 가장 높은 사람을 고른다(P1 아이언 < P2 브론즈).
         Assert.Equal(DraftEventKind.AutoPick, room.LastEvent!.Kind);
-        Assert.Equal(room.Players[0].Name, room.LastEvent.PlayerName);
+        Assert.Equal("P2", room.LastEvent.PlayerName);
     }
 
     [Fact]

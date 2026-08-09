@@ -696,7 +696,7 @@ public sealed class DraftRoom
                 if (AutoPickOnTimeout)
                 {
                     var current = TeamAtPick(PickIndex);
-                    var best = _players.FirstOrDefault(p => !p.IsDrafted);
+                    var best = BestAvailableNoLock();
                     if (current is not null && best is not null) CommitPickNoLock(best, current, byTimeout: true);
                     else AdvanceNoLock();
                 }
@@ -738,6 +738,18 @@ public sealed class DraftRoom
             ResetTurnClockNoLock();
         }
     }
+
+    /// <summary>
+    /// 시간이 다 됐을 때 대신 골라줄 선수. 티어가 가장 높은 사람을 고르고, 같은 티어끼리는
+    /// 목록에서 위에 있는 쪽을 쓴다(LINQ 정렬이 안정적이라 진행자가 정해둔 순서가 살아 있다).
+    /// 목록 맨 위를 그냥 집으면 "진행자가 티어순 정렬을 눌렀는지"에 결과가 달라져,
+    /// 정신없는 순간에 엉뚱한 선수가 들어간다.
+    /// </summary>
+    private Player? BestAvailableNoLock() =>
+        _players
+            .Where(p => !p.IsDrafted)
+            .OrderByDescending(p => Tiers.RankOf(p.Tier))
+            .FirstOrDefault();
 
     private void ResetTurnClockNoLock() =>
         TurnEndsAt = TurnSeconds > 0 ? DateTimeOffset.UtcNow.AddSeconds(TurnSeconds) : null;

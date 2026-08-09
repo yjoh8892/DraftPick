@@ -12,17 +12,19 @@ public class TurnTimerTests
     private static void WaitOutTurn() => Thread.Sleep(1200);
 
     [Fact]
-    public void 시간이_다_되면_남은_선수_중_맨_위가_자동_지명된다()
+    public void 시간이_다_되면_티어가_가장_높은_사람이_자동_지명된다()
     {
+        // TestRoom은 티어를 낮은 것부터 돌려가며 붙이므로 P1이 아이언, P2가 브론즈다.
+        // 목록 맨 위(P1)가 아니라 더 높은 티어인 P2가 들어가야 한다.
         var room = TestRoom.Started(rounds: 1, teams: 2, players: 2, turnSeconds: 1);
         var onClock = room.CurrentTeam!;
-        var top = room.Players[0];
 
         WaitOutTurn();
         room.Tick();
 
         Assert.Equal(1, room.PickIndex);
-        Assert.Equal(onClock.Id, top.DraftedBy);
+        Assert.Equal("P2", Assert.Single(room.Players.Where(p => p.IsDrafted)).Name);
+        Assert.Equal(onClock.Id, room.Players[1].DraftedBy);
     }
 
     [Fact]

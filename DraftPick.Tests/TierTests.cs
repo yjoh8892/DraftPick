@@ -47,8 +47,58 @@ public class TierTests
         Assert.Equal(["C", "D", "A", "B"], room.Players.Select(p => p.Name));
     }
 
+    /// <summary>
+    /// 자동 지명은 진행자가 티어순 정렬을 눌렀는지에 좌우되면 안 된다.
+    /// 시간 초과는 정신없을 때 일어나므로, 그때 엉뚱한 선수가 들어가면 분쟁이 된다.
+    /// </summary>
+    private static DraftRoom TimeoutRoom(params (string Name, string Tier)[] players)
+    {
+        var room = new DraftRoom { Code = "X", HostKey = TestRoom.HostKey, Rounds = 1, TurnSeconds = 1 };
+        room.AddTeam("T1");
+        room.AddTeam("T2");
+        foreach (var (name, tier) in players) room.AddPlayer(name, tier: tier);
+        room.Start();
+
+        Thread.Sleep(1200);
+        room.Tick();
+        return room;
+    }
+
     [Fact]
-    public void 자동_지명은_정렬된_목록의_맨_위를_고른다()
+    public void 정렬하지_않아도_최고_티어가_자동_지명된다()
+    {
+        // 명단 맨 위는 약한 선수지만 뽑히면 안 된다.
+        var room = TimeoutRoom(("약한선수", "아이언"), ("센선수", "레디언트"));
+
+        Assert.Equal("센선수", Assert.Single(room.Players.Where(p => p.IsDrafted)).Name);
+    }
+
+    [Fact]
+    public void 같은_티어끼리는_명단_위쪽이_먼저다()
+    {
+        var room = TimeoutRoom(("먼저적은사람", "골드"), ("나중에적은사람", "골드"));
+
+        Assert.Equal("먼저적은사람", Assert.Single(room.Players.Where(p => p.IsDrafted)).Name);
+    }
+
+    [Fact]
+    public void 티어_미지정은_맨_뒤로_밀린다()
+    {
+        var room = TimeoutRoom(("모름", Tiers.Unset), ("아이언선수", "아이언"));
+
+        Assert.Equal("아이언선수", Assert.Single(room.Players.Where(p => p.IsDrafted)).Name);
+    }
+
+    [Fact]
+    public void 모두_티어가_없으면_명단_순서를_따른다()
+    {
+        var room = TimeoutRoom(("첫째", Tiers.Unset), ("둘째", Tiers.Unset));
+
+        Assert.Equal("첫째", Assert.Single(room.Players.Where(p => p.IsDrafted)).Name);
+    }
+
+    [Fact]
+    public void 티어순_정렬을_눌러도_결과는_같다()
     {
         var room = new DraftRoom { Code = "X", HostKey = TestRoom.HostKey, Rounds = 1, TurnSeconds = 1 };
         room.AddTeam("T1");
@@ -61,7 +111,6 @@ public class TierTests
         Thread.Sleep(1200);
         room.Tick();
 
-        Assert.Equal("센선수", room.Players[0].Name);
-        Assert.True(room.Players[0].IsDrafted);
+        Assert.Equal("센선수", Assert.Single(room.Players.Where(p => p.IsDrafted)).Name);
     }
 }
