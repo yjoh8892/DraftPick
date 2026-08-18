@@ -107,13 +107,31 @@ public class ResultTextTests
     }
 
     [Fact]
-    public void 팀장_이름이_있으면_괄호로_붙는다()
+    public void 팀장은_지명_명단에_없으므로_따로_한_줄로_들어간다()
     {
         var room = TestRoom.Started(rounds: 1, teams: 2, players: 2);
         room.PickAsHost();
         room.PickAsHost();
 
-        Assert.Contains($"{room.Teams[0].Name} ({room.Teams[0].Captain})", room.BuildResultText());
+        var text = room.BuildResultText();
+
+        Assert.Contains($"■ {room.Teams[0].Name}", text);
+        Assert.Contains($"팀장. {room.Teams[0].Captain}", text);
+    }
+
+    [Fact]
+    public void 팀장_이름이_비면_그_줄은_없다()
+    {
+        var room = new DraftRoom { Code = "X", HostKey = TestRoom.HostKey, Rounds = 1 };
+        room.AddTeam("이름없는팀장팀");
+        room.AddTeam("T2");
+        room.AddPlayer("갑");
+        room.AddPlayer("을");
+        room.Start();
+        room.PickAsHost();
+        room.PickAsHost();
+
+        Assert.DoesNotContain("팀장.", room.BuildResultText());
     }
 
     [Fact]

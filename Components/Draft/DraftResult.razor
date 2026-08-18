@@ -45,12 +45,15 @@
                 <div class="roster-head">
                     <span class="team-dot"></span>
                     <span class="team-name">@team.Name</span>
-                    @if (!string.IsNullOrWhiteSpace(team.Captain))
-                    {
-                        <span class="team-captain">@team.Captain</span>
-                    }
                 </div>
                 <ol class="roster-list">
+                    @if (!string.IsNullOrWhiteSpace(team.Captain))
+                    {
+                        <li class="roster-slot captain">
+                            <span class="slot-badge">팀장</span>
+                            <span class="slot-name">@team.Captain</span>
+                        </li>
+                    }
                     @foreach (var player in rosters[team.Id])
                     {
                         <li class="roster-slot">

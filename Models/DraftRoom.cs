@@ -272,8 +272,10 @@ public sealed class DraftRoom
 
             foreach (var team in _teams)
             {
-                var header = string.IsNullOrWhiteSpace(team.Captain) ? team.Name : $"{team.Name} ({team.Captain})";
-                lines.Add($"■ {header}");
+                lines.Add($"■ {team.Name}");
+
+                // 팀장은 뽑는 쪽이라 지명 명단에 없다. 팀 구성을 온전히 보여주려면 여기 붙여야 한다.
+                if (!string.IsNullOrWhiteSpace(team.Captain)) lines.Add($"  팀장. {team.Captain}");
 
                 foreach (var player in rosters[team.Id])
                 {

@@ -130,9 +130,17 @@
                         <SeatLight Connected="Room.IsTeamConnected(team.Id)" />
                         <span class="team-dot"></span>
                         <span class="team-name">@team.Name</span>
-                        <span class="roster-count">@roster.Count / @Room.Rounds</span>
+                        <span class="roster-count" title="지명한 인원 / 지명 가능 인원">@roster.Count / @Room.Rounds</span>
                     </div>
                     <ol class="roster-list">
+                        @* 팀장은 지명 대상이 아니라 뽑는 쪽이라 명단에 없다. 팀 구성이 한눈에 들어오도록 여기 고정해둔다. *@
+                        @if (!string.IsNullOrWhiteSpace(team.Captain))
+                        {
+                            <li class="roster-slot captain">
+                                <span class="slot-badge">팀장</span>
+                                <span class="slot-name">@team.Captain</span>
+                            </li>
+                        }
                         @for (var slot = 0; slot < Room.Rounds; slot++)
                         {
                             var picked = slot < roster.Count ? roster[slot] : null;

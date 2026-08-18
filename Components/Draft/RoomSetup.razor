@@ -31,7 +31,7 @@
 
             <div class="field-row">
                 <label class="field">
-                    <span>라운드 수 (팀당 인원)</span>
+                    <span>라운드 수 (팀장 제외, 팀당 지명 인원)</span>
                     <input class="input" type="number" min="@DraftRoom.MinRounds" max="@DraftRoom.MaxRounds"
                            @bind="Room.Rounds" @bind:after="Notify" />
                 </label>

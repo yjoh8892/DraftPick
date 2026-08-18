@@ -1029,6 +1029,23 @@ select.input option { background: var(--bg-raised); color: var(--text); }
 
 .roster-slot.empty { background: transparent; border: 1px dashed var(--line-soft); }
 
+/* 팀장은 지명으로 들어온 게 아니라서 뽑힌 선수들과 구분해 보여준다. */
+.roster-slot.captain {
+    background: transparent;
+    border: 1px solid var(--team-color);
+    margin-bottom: .15rem;
+}
+
+.slot-badge {
+    flex: none;
+    padding: 0 .3rem;
+    border-radius: 4px;
+    background: var(--team-color);
+    color: #0b0f16;
+    font-size: .65rem;
+    font-weight: 700;
+}
+
 .slot-pick {
     font-family: var(--mono);
     font-size: .7rem;
